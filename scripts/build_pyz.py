@@ -42,6 +42,7 @@ def build(output: Path, root: Path = ROOT) -> Path:
     entries = {
         "__main__.py": b"from blf_to_mat.cli import main\nraise SystemExit(main())\n",
         "requirements.txt": requirements.encode("utf-8"),
+        "LICENSE": (root / "LICENSE").read_text(encoding="utf-8").encode("utf-8"),
     }
     for source in sorted((root / "src/blf_to_mat").rglob("*.py")):
         entries[source.relative_to(root / "src").as_posix()] = source.read_text(

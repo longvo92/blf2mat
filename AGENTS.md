@@ -12,8 +12,8 @@
   maintenance out of user guides. Keep necessary maintainer guidance here.
 - Apply the same style to `CHANGELOG.md`: a few short bullets per release about
   changes users notice. Group minor changes and omit internal cleanup/check details.
-- Keep `README.md` and `README.vi.md` consistent. Repository documentation is
-  English unless it is the Vietnamese translation; conversations are Vietnamese.
+- Maintain one English `README.md`. Do not create or restore `README.vi.md` or
+  other translated guides unless explicitly requested. Conversations are Vietnamese.
 - Do not create unsolicited reports or summary documents.
 
 ## Development and verification
@@ -39,6 +39,8 @@
   section matching it. Build with `python scripts/build_pyz.py --release-tag vVERSION`.
 - The build produces a source-only `.pyz`, SHA-256 checksum and generated
   requirements in `dist/`. Python/native dependencies are installed separately.
+- The project is MIT-licensed. Keep `LICENSE` in the repository and `.pyz` archive,
+  and preserve the matching license metadata in `pyproject.toml`.
 - Package only application code. Keep vehicle data, user configurations, generated
   output and the original standalone script out of Git and release assets.
 - Preserve unrelated work; use the appropriate `Codex/...` branch and PR. Commit

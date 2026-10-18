@@ -1,7 +1,5 @@
 # BLF to MAT
 
-[Tiếng Việt](README.vi.md)
-
 Convert CAN BLF logs to MAT files using a graphical interface or the command line.
 **Only a BLF file or folder is required.** Add other inputs when your project needs them.
 
@@ -61,3 +59,7 @@ requires MATLAB/Simulink R2024b+ and an available license.
 Without DBC, CAN signals cannot be decoded. Missing mapped samples use defaults
 with warnings, so review the log. **Existing output files are overwritten.** Native
 Dataset export still needs validation with a live MATLAB/Signal Editor session.
+
+## License
+
+[MIT](LICENSE).

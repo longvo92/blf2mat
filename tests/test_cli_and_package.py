@@ -32,6 +32,8 @@ def test_archive_is_reproducible_and_contains_only_app(tmp_path):
     )
     with zipfile.ZipFile(first) as package:
         assert "__main__.py" in package.namelist()
+        assert package.read("LICENSE").decode().startswith("MIT License\n")
+        assert "Long Vo Thien" in package.read("LICENSE").decode()
         assert not any(
             name.endswith((".blf", ".dbc", ".xlsx", ".pyc")) for name in package.namelist()
         )

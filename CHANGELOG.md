@@ -6,3 +6,4 @@
 - Choose a DBC file or folder; optionally add Excel, TXT or YAML with your own sheets and columns.
 - Export MAT without MATLAB, or use MATLAB for Signal Editor Datasets.
 - Check the environment with `--check` and run the tool from one `.pyz` file.
+- Available under the MIT license.
