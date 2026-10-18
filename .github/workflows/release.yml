@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Validate tag, version and changelog; build release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/build_pyz.py --release-tag "$RELEASE_TAG"
+      - name: Smoke test the release archive without dependencies
+        run: |
+          python -S dist/blf_to_mat-*.pyz --version
+          python -S dist/blf_to_mat-*.pyz --help
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "BLF to MAT $RELEASE_TAG"
