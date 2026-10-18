@@ -30,11 +30,11 @@ def _existing_file(value: str, label: str, suffixes: tuple[str, ...] = ()) -> Pa
     return p.resolve()
 
 
-def _existing_dir(value: str, label: str) -> Path:
+def _existing_dbc_source(value: str) -> Path:
     p = Path(value).expanduser()
-    if not p.is_dir():
-        raise argparse.ArgumentTypeError(f"{label} does not exist: {p}")
-    return p.resolve()
+    if p.is_dir():
+        return p.resolve()
+    return _existing_file(value, "DBC file or folder", (".dbc",))
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -66,10 +66,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-d",
+        "--dbc",
         "--dbc-folder",
+        dest="dbc_folder",
         required=False,
-        metavar="DIR",
-        help="Root folder containing one or more .dbc files.",
+        metavar="FILE_OR_DIR",
+        help="Optional .dbc file or folder searched recursively. --dbc-folder remains an alias.",
     )
     parser.add_argument(
         "-b",
@@ -207,7 +209,7 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         parser.error("required for conversion: --blf")
     try:
         excel = _existing_file(args.excel, "Excel file", (".xlsx", ".xlsm")) if args.excel else None
-        dbc_folder = _existing_dir(args.dbc_folder, "DBC folder") if args.dbc_folder else None
+        dbc_folder = _existing_dbc_source(args.dbc_folder) if args.dbc_folder else None
         blf_source = Path(args.blf).expanduser().resolve()
         if blf_source.is_file() and blf_source.suffix.lower() == ".blf":
             blf_files = [blf_source]

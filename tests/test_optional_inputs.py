@@ -42,6 +42,40 @@ def test_blf_plus_dbc_infers_messages_without_zero_insertion(sample):
     assert scenario["Sample"]["RequestCAN"]["Data"].tolist() == [2, 3]
 
 
+@pytest.mark.parametrize("flag", ["--dbc", "-d", "--dbc-folder"])
+@pytest.mark.parametrize("single_file", [False, True])
+def test_dbc_source_accepts_file_or_recursive_folder(sample, flag, single_file):
+    folder = sample["root"] / "dbc"
+    source = folder / "sample.dbc"
+    nested = folder / "nested"
+    nested.mkdir()
+    source = source.rename(nested / "sample.DBC")
+    assert cli.main([*basic_args(sample), flag, str(source if single_file else folder)]) == 0
+    scenario = loadmat(sample["output"] / "sample_signals.mat", simplify_cells=True)["Scenario"]
+    assert scenario["Sample"]["SpeedCAN"]["Data"].tolist() == [10, 30]
+
+
+def test_single_dbc_does_not_load_neighboring_files(sample):
+    folder = sample["root"] / "dbc"
+    source = folder / "sample.dbc"
+    (folder / "other.dbc").write_text(
+        source.read_text()
+        .replace("Sample:", "Other:")
+        .replace("SpeedCAN", "OtherSpeed")
+        .replace("RequestCAN", "OtherRequest")
+    )
+    assert cli.main([*basic_args(sample), "--dbc", str(source)]) == 0
+    scenario = loadmat(sample["output"] / "sample_signals.mat", simplify_cells=True)["Scenario"]
+    assert list(scenario) == ["Sample"]
+
+
+@pytest.mark.parametrize("name", ["missing.dbc", "schema.txt"])
+def test_invalid_dbc_source_is_rejected(sample, name):
+    with pytest.raises(SystemExit) as exc:
+        cli.main([*basic_args(sample), "--dbc", str(sample["root"] / name)])
+    assert exc.value.code == 2
+
+
 def test_schema_without_excel_maps_element_names(sample):
     sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
     assert cli.main([*dbc_args(sample), "--schema", str(sample["schema"])]) == 0

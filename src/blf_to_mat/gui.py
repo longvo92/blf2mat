@@ -68,7 +68,7 @@ class Application:
         self.controls: list[ttk.Widget] = []
         rows = (
             ("Excel workbook (optional)", "excel", "excel"),
-            ("DBC folder (optional)", "dbc_folder", "directory"),
+            ("DBC file / folder (optional)", "dbc_folder", "dbc"),
             ("BLF file / folder", "blf", "blf"),
             ("TXT schemas (optional)", "schema", "schema"),
             ("Output folder (auto)", "output", "directory"),
@@ -84,13 +84,15 @@ class Application:
                 entry.state(["readonly"])
             self.controls.append(entry)
             button = ttk.Button(
-                frame, text="Browse...", command=lambda k=key, t=kind: self.browse(k, t)
+                frame,
+                text="File..." if kind in ("blf", "dbc") else "Browse...",
+                command=lambda k=key, t=kind: self.browse(k, t),
             )
             button.grid(row=row, column=2)
             self.controls.append(button)
-            if key == "blf":
+            if key in ("blf", "dbc_folder"):
                 folder = ttk.Button(
-                    frame, text="Folder...", command=lambda: self.browse("blf", "directory")
+                    frame, text="Folder...", command=lambda k=key: self.browse(k, "directory")
                 )
                 folder.grid(row=row, column=3, padx=4)
                 self.controls.append(folder)
@@ -233,6 +235,7 @@ class Application:
             filters = {
                 "excel": [("Excel workbook", "*.xlsx *.xlsm")],
                 "blf": [("CAN BLF log", "*.blf")],
+                "dbc": [("DBC definitions", "*.dbc *.DBC")],
                 "config": [("YAML mapping", "*.yaml *.yml")],
                 "matlab": [("MATLAB executable", "matlab.exe matlab"), ("All files", "*")],
             }

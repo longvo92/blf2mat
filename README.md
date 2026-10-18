@@ -8,7 +8,7 @@ Convert CAN BLF logs to MAT files using a graphical interface or the command lin
 ## Features
 
 - Export raw CAN/CAN-FD frames with BLF alone.
-- Add DBC files to decode signals automatically.
+- Choose a DBC file or folder to decode signals automatically.
 - Optionally use Excel, TXT or YAML to map signals, set datatypes, apply formulas
   or hold inputs at constant values.
 - Choose your own Excel input/output sheets, columns and header row.
@@ -41,13 +41,15 @@ For the command line:
 
 ```powershell
 python .\blf_to_mat-0.1.0.pyz --blf .\capture.blf
-python .\blf_to_mat-0.1.0.pyz --blf .\Logs --dbc-folder .\DBC
+python .\blf_to_mat-0.1.0.pyz --blf .\capture.blf --dbc .\network.dbc
+python .\blf_to_mat-0.1.0.pyz --blf .\Logs --dbc .\DBC
 ```
 
 Output goes to `mat_output` beside the BLF file or inside the selected BLF folder.
 Use `--output` to choose another folder. BLF-only creates `<name>.mat` with frames;
 DBC-only creates `<name>_signals.mat`. Custom mappings produce input/output files
-for the configured sides. See `--help` for all options and the
+for the configured sides. In the GUI, use **File...** or **Folder...** for DBC;
+`--dbc-folder` remains supported in CLI. See `--help` for all options and the
 [YAML example](examples/signal_mapping.example.yaml) for mapping syntax.
 
 ## Before using the result

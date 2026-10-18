@@ -101,6 +101,36 @@ def test_gui_blf_only(app, sample):
 
 
 @pytest.mark.gui
+@pytest.mark.parametrize("single_file", [False, True])
+def test_gui_dbc_file_and_folder_buttons(app, sample, monkeypatch, single_file):
+    from tkinter import ttk
+
+    from blf_to_mat import gui
+
+    source = sample["root"] / "dbc"
+    if single_file:
+        source = source / "sample.dbc"
+    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(source))
+    monkeypatch.setattr(gui.filedialog, "askdirectory", lambda **kwargs: str(source))
+    frame = app.root.winfo_children()[0]
+    button = next(
+        widget
+        for widget in app.controls
+        if isinstance(widget, ttk.Button)
+        and widget.master is frame
+        and int(widget.grid_info()["row"]) == 1
+        and int(widget.grid_info()["column"]) == (2 if single_file else 3)
+    )
+    button.invoke()
+    assert app.fields["dbc_folder"].get() == str(source)
+    app.fields["blf"].set(str(sample["blf"]))
+    app.start_conversion()
+    wait_for_job(app)
+    assert app.status.get() == "Completed"
+    assert (sample["root"] / "mat_output/sample_signals.mat").is_file()
+
+
+@pytest.mark.gui
 def test_gui_custom_excel_options_share_cli_validation(app, sample):
     import pandas as pd
 

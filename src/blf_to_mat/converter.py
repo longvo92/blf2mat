@@ -703,8 +703,13 @@ class DbcCandidate:
 def load_dbc_folder(
     folder: Path,
 ) -> tuple[dict[str, list[DbcCandidate]], set[str]]:
-    dbc_paths = sorted(
-        path for path in folder.rglob("*") if path.is_file() and path.suffix.lower() == ".dbc"
+    """Load one DBC file or all DBC files recursively from a folder."""
+    dbc_paths = (
+        [folder]
+        if folder.is_file()
+        else sorted(
+            path for path in folder.rglob("*") if path.is_file() and path.suffix.lower() == ".dbc"
+        )
     )
     if not dbc_paths:
         raise RuntimeError(f"No .dbc file found under:\n{folder}")

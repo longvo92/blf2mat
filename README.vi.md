@@ -8,7 +8,7 @@ Chuyển log CAN BLF thành file MAT bằng giao diện hoặc dòng lệnh.
 ## Tính năng
 
 - Chỉ BLF: xuất frame CAN/CAN-FD thô.
-- Thêm DBC để tự giải mã signal.
+- Chọn file hoặc folder DBC để tự giải mã signal.
 - Excel, TXT, YAML là tùy chọn để map signal, chọn datatype, áp dụng công thức
   hoặc giữ input ở giá trị hằng số.
 - Tự chọn sheet input/output, cột và dòng header của Excel.
@@ -40,13 +40,15 @@ Chạy bằng dòng lệnh:
 
 ```powershell
 python .\blf_to_mat-0.1.0.pyz --blf .\capture.blf
-python .\blf_to_mat-0.1.0.pyz --blf .\Logs --dbc-folder .\DBC
+python .\blf_to_mat-0.1.0.pyz --blf .\capture.blf --dbc .\network.dbc
+python .\blf_to_mat-0.1.0.pyz --blf .\Logs --dbc .\DBC
 ```
 
 Kết quả nằm trong `mat_output` cạnh file BLF hoặc bên trong BLF folder đã chọn.
 Dùng `--output` để đổi folder. Chỉ BLF tạo `<tên>.mat` chứa frame; BLF + DBC tạo
 `<tên>_signals.mat`. Khi dùng mapping riêng, tool tạo file input/output cho phía
-đã cấu hình. Xem `--help` để biết các tùy chọn và
+đã cấu hình. Trên GUI, dùng **File...** hoặc **Folder...** để chọn DBC;
+CLI vẫn hỗ trợ `--dbc-folder`. Xem `--help` để biết các tùy chọn và
 [ví dụ YAML](examples/signal_mapping.example.yaml) để cấu hình mapping.
 
 ## Lưu ý khi dùng kết quả
