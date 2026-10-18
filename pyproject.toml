@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blf-to-mat"
+dynamic = ["version"]
+description = "Convert CAN BLF logs to MAT or Simulink Datasets with optional project mappings, CLI and GUI."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "numpy>=1.26,<3",
+    "pandas>=2.2,<4",
+    "scipy>=1.12,<2",
+    "python-can>=4.4,<5",
+    "cantools>=39,<42",
+    "openpyxl>=3.1,<4",
+    "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.15,<0.16"]
+
+[project.scripts]
+blf-to-mat = "blf_to_mat.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "blf_to_mat.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = ["gui: requires a graphical display and Tcl/Tk"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["blf_to_signal_editor_cli(3).py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

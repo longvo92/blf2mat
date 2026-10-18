@@ -1,0 +1,4 @@
+# Synthetic interface names; dimensions are scalar.
+VehicleInputs.VehicleSpeed : single
+VehicleInputs.Enable : boolean
+ControllerOutputs.Request : uint8

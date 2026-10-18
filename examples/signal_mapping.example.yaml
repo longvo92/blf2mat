@@ -1,0 +1,11 @@
+# Synthetic examples only. CAN decode -> status mapping -> formula -> datatype.
+input_mappings:
+  - interface: VehicleInputs
+    element: VehicleSpeed
+    can_signal: VehicleSpeedCAN
+    formula: /10
+# Forced values bypass CAN and transforms for the full BLF duration.
+input_forces:
+  - interface: VehicleInputs
+    element: Enable
+    value: true
