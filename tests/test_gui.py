@@ -10,8 +10,8 @@ from blf_to_mat import converter as core
 from tests.test_conversion import fake_packager
 
 
-@pytest.fixture
-def app():
+@pytest.fixture(scope="module")
+def tk_root():
     try:
         import tkinter
 
@@ -20,14 +20,23 @@ def app():
         if os.environ.get("BLF_REQUIRE_GUI") == "1":
             pytest.fail(f"Required GUI runtime unavailable: {exc}")
         pytest.skip(f"Graphical display/Tcl/Tk unavailable: {exc}")
+    root.withdraw()
+    # Keep a single Tcl/Tk interpreter for this test module, as in the real app.
+    # Recreating interpreters between threaded tests is unstable on Windows Tk.
+    yield root
+    root.destroy()
+
+
+@pytest.fixture
+def app(tk_root):
     from blf_to_mat.gui import Application
 
-    root.withdraw()
-    application = Application(root)
+    application = Application(tk_root)
     yield application
-    if root.winfo_exists():
-        root.after_cancel(application.poll_id)
-        root.destroy()
+    tk_root.after_cancel(application.poll_id)
+    for widget in tk_root.winfo_children():
+        widget.destroy()
+    tk_root.update_idletasks()
 
 
 def wait_for_job(app):
