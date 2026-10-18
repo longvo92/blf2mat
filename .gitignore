@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+.coverage
+htmlcov/
+# Original user script retained locally; maintained implementation lives in src/.
+blf_to_signal_editor_cli(3).py
+# Conversion inputs/outputs can contain proprietary vehicle data.
+*.blf
+*.mat
+*.xlsx
+*.xlsm
+*.dbc
+signal_mapping.yaml
