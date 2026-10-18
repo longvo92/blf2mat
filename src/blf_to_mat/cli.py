@@ -41,9 +41,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blf-to-mat",
         description=(
-            "Convert BLF + DBC + Excel + TXT schema to native Signal Editor "
-            "Dataset MAT files. SLDD is not used; MATLAB runs only headless "
-            "for final Dataset packaging."
+            "Convert BLF logs to MAT. Only --blf is required. Optional DBC, Excel, "
+            "TXT and YAML customize decoded signals. MATLAB is needed only for --format dataset."
         ),
         epilog=(
             "PowerShell example:\n"
@@ -63,7 +62,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--excel",
         required=False,
         metavar="FILE",
-        help="Excel workbook containing SWC_INF and SWC_OUTF sheets.",
+        help="Optional Excel mapping workbook; sheets and columns can be selected or detected.",
     )
     parser.add_argument(
         "-d",
@@ -95,7 +94,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--output",
         required=False,
         metavar="DIR",
-        help="Output folder; created automatically when missing.",
+        help="Output folder (default: mat_output beside the BLF file or inside the BLF folder).",
     )
     parser.add_argument(
         "-c",
@@ -103,7 +102,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FILE",
         help=(
-            "Optional YAML with SWC_INF CAN mappings, status/formula transforms, "
+            "Optional YAML with input CAN mappings, status/formula transforms, "
             "and constant input_forces for non-CAN inputs. If omitted, "
             "signal_mapping.yaml next to the .pyz (or in the working directory for source runs) is auto-loaded "
             "when present."
@@ -117,6 +116,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Path to matlab.exe. Optional when MATLAB is on PATH or installed "
             "under a common Windows MATLAB folder."
         ),
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("mat", "dataset"),
+        default=None,
+        help="mat: ordinary MAT without MATLAB (default); dataset: native Signal Editor Dataset. Explicit --matlab implies dataset unless --format is set.",
+    )
+    parser.add_argument(
+        "--input-sheet",
+        action="append",
+        default=[],
+        help="Input sheet name; repeat for multiple sheets. Default: detect mapping sheets.",
+    )
+    parser.add_argument(
+        "--output-sheet",
+        action="append",
+        default=[],
+        help="Output sheet name; repeat for multiple sheets.",
+    )
+    for option in ("element", "can", "interface", "dtype"):
+        parser.add_argument(
+            f"--{option}-column",
+            help="Excel header name or 1-based column number; omitted columns are detected.",
+        )
+    parser.add_argument(
+        "--header-row",
+        type=int,
+        help="1-based Excel header row (default: detect within the first 20 rows).",
     )
     parser.add_argument(
         "--debug",
@@ -175,20 +203,11 @@ def find_matlab_executable(explicit: str | None = None) -> Path:
 
 
 def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> SelectedPaths:
-
-    missing = [
-        name
-        for name in ("excel", "dbc_folder", "blf", "schema", "output")
-        if not getattr(args, name, None)
-    ]
-    if missing:
-        parser.error(
-            "required for conversion: "
-            + ", ".join("--" + name.replace("_", "-") for name in missing)
-        )
+    if not args.blf:
+        parser.error("required for conversion: --blf")
     try:
-        excel = _existing_file(args.excel, "Excel file", (".xlsx", ".xlsm"))
-        dbc_folder = _existing_dir(args.dbc_folder, "DBC folder")
+        excel = _existing_file(args.excel, "Excel file", (".xlsx", ".xlsm")) if args.excel else None
+        dbc_folder = _existing_dir(args.dbc_folder, "DBC folder") if args.dbc_folder else None
         blf_source = Path(args.blf).expanduser().resolve()
         if blf_source.is_file() and blf_source.suffix.lower() == ".blf":
             blf_files = [blf_source]
@@ -201,7 +220,7 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
                 raise argparse.ArgumentTypeError(f"No .blf files found in {blf_source}")
         else:
             raise argparse.ArgumentTypeError(f"BLF file/folder does not exist: {blf_source}")
-        schema_files = [_existing_file(x, "Schema TXT", (".txt",)) for x in args.schema]
+        schema_files = [_existing_file(x, "Schema TXT", (".txt",)) for x in args.schema or []]
 
         if args.config:
             mapping_config = _existing_file(args.config, "Mapping config", (".yaml", ".yml"))
@@ -209,7 +228,21 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
             default_config = application_directory() / "signal_mapping.yaml"
             mapping_config = default_config if default_config.is_file() else None
 
-        matlab_exe = find_matlab_executable(args.matlab)
+        output_format = args.output_format or ("dataset" if args.matlab else "mat")
+        matlab_exe = find_matlab_executable(args.matlab) if output_format == "dataset" else None
+        excel_options = [
+            args.input_sheet,
+            args.output_sheet,
+            args.element_column,
+            args.can_column,
+            args.interface_column,
+            args.dtype_column,
+            args.header_row,
+        ]
+        if any(excel_options) and excel is None:
+            raise argparse.ArgumentTypeError("Excel sheet/column options require --excel.")
+        if args.header_row is not None and args.header_row < 1:
+            raise argparse.ArgumentTypeError("--header-row must be at least 1.")
     except argparse.ArgumentTypeError as exc:
         parser.error(str(exc))
 
@@ -218,9 +251,19 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         dbc_folder=dbc_folder,
         blf_files=blf_files,
         schema_files=schema_files,
-        output_folder=Path(args.output).expanduser().resolve(),
+        output_folder=Path(args.output).expanduser().resolve()
+        if args.output
+        else (blf_source if blf_source.is_dir() else blf_source.parent) / "mat_output",
         mapping_config=mapping_config,
         matlab_exe=matlab_exe,
+        output_format=output_format,
+        input_sheets=tuple(args.input_sheet),
+        output_sheets=tuple(args.output_sheet),
+        element_column=args.element_column,
+        can_column=args.can_column,
+        interface_column=args.interface_column,
+        dtype_column=args.dtype_column,
+        header_row=args.header_row,
     )
 
 
@@ -237,7 +280,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             from .checks import check_environment
 
-            return check_environment(args.matlab)
+            return check_environment(
+                args.matlab, require_matlab=args.output_format == "dataset" or bool(args.matlab)
+            )
         if args.gui or not arguments:
             from .gui import launch
 

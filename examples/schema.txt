@@ -1,4 +1,4 @@
 # Synthetic interface names; dimensions are scalar.
-BSW_CanInp.VehicleSpeed : single
-BSW_CanInp.Enable : boolean
-BSW_CanOut.Request : uint8
+VehicleInputs.VehicleSpeed : single
+VehicleInputs.Enable : boolean
+ControllerOutputs.Request : uint8

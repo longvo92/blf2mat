@@ -44,7 +44,9 @@ def build(output: Path, root: Path = ROOT) -> Path:
         "requirements.txt": requirements.encode("utf-8"),
     }
     for source in sorted((root / "src/blf_to_mat").rglob("*.py")):
-        entries[source.relative_to(root / "src").as_posix()] = source.read_bytes()
+        entries[source.relative_to(root / "src").as_posix()] = source.read_text(
+            encoding="utf-8"
+        ).encode("utf-8")
     archive = output / f"blf_to_mat-{version}.pyz"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
         for name, data in sorted(entries.items()):

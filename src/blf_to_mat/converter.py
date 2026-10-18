@@ -60,21 +60,6 @@ INPUT_ZERO_TIME_EPS = 1e-12
 MIN_FALLBACK_DURATION_S = 1.0
 EXCEL_HEADER_SCAN_ROWS = 20
 
-# Preserve the expected architecture input-port order when these interfaces
-# exist in the TXT schema. Extra SWC_INF interfaces found through Excel/config
-# are appended afterwards.
-INPUT_INTERFACE_ORDER = (
-    "BSW_AnaInp",
-    "BSW_CanInp",
-    "BSW_DemInp",
-    "BSW_DigInp",
-    "BSW_IcuInp",
-    "BSW_NvmInp",
-    "BSW_UdsInp",
-    "BSW_WakeSource",
-)
-
-
 # -----------------------------------------------------------------------------
 # Utility
 # -----------------------------------------------------------------------------
@@ -210,13 +195,21 @@ def cast_signal_data(values: Any, dtype: str) -> Any:
 
 @dataclass
 class SelectedPaths:
-    excel: Path
-    dbc_folder: Path
+    excel: Path | None
+    dbc_folder: Path | None
     blf_files: list[Path]
     schema_files: list[Path]
     output_folder: Path
     mapping_config: Path | None
-    matlab_exe: Path
+    matlab_exe: Path | None
+    output_format: str = "mat"
+    input_sheets: tuple[str, ...] = ()
+    output_sheets: tuple[str, ...] = ()
+    element_column: str | None = None
+    can_column: str | None = None
+    interface_column: str | None = None
+    dtype_column: str | None = None
+    header_row: int | None = None
 
 
 @dataclass(frozen=True)
@@ -238,7 +231,7 @@ class InputCanMapping:
 
 @dataclass(frozen=True)
 class InputForce:
-    """Constant value for an SWC_INF element that is not sourced from CAN."""
+    """Constant value for an input element that is not sourced from CAN."""
 
     interface: str
     element: str
@@ -256,7 +249,7 @@ class InputForce:
 def load_input_mapping_config(
     config_path: Path | None,
 ) -> tuple[list[InputCanMapping], list[InputForce]]:
-    """Load SWC_INF CAN mappings and non-CAN constant forces from YAML.
+    """Load input CAN mappings and non-CAN constant forces from YAML.
 
     ``input_mappings`` maps an Interface.DataElement to a CAN signal, with
     optional status/formula transforms.
@@ -710,7 +703,9 @@ class DbcCandidate:
 def load_dbc_folder(
     folder: Path,
 ) -> tuple[dict[str, list[DbcCandidate]], set[str]]:
-    dbc_paths = sorted(folder.rglob("*.dbc"))
+    dbc_paths = sorted(
+        path for path in folder.rglob("*") if path.is_file() and path.suffix.lower() == ".dbc"
+    )
     if not dbc_paths:
         raise RuntimeError(f"No .dbc file found under:\n{folder}")
 
@@ -755,46 +750,6 @@ def load_dbc_folder(
 # Excel mapping detector
 # -----------------------------------------------------------------------------
 
-DATA_ELEMENT_HEADER_HINTS = (
-    "dataelement",
-    "data element",
-    "model signal",
-    "model element",
-    "element name",
-    "data element name",
-    "application signal",
-)
-
-CAN_SIGNAL_HEADER_HINTS = (
-    "can signal",
-    "can_signal",
-    "dbc signal",
-    "dbc_signal",
-    "can signal name",
-    "network signal",
-)
-
-
-@dataclass
-class SheetMappingDetection:
-    header_row: int
-    element_col: int
-    can_col: int
-    element_hits: int
-    score: float
-
-
-def header_hint_score(text: str, hints: Iterable[str]) -> float:
-    t = str(text).strip().lower()
-    if not t:
-        return 0.0
-    n = norm(t)
-    score = 0.0
-    for h in hints:
-        if h in t or norm(h) == n:
-            score = max(score, 8.0)
-    return score
-
 
 def value_match_score(
     series: pd.Series,
@@ -809,65 +764,6 @@ def value_match_score(
     return hits
 
 
-def detect_mapping_columns(
-    raw: pd.DataFrame,
-    element_norms: set[str],
-    dbc_signal_norms: set[str],
-) -> SheetMappingDetection | None:
-    if raw.empty or raw.shape[1] < 2:
-        return None
-
-    max_header = min(EXCEL_HEADER_SCAN_ROWS, max(0, len(raw) - 2))
-    best: SheetMappingDetection | None = None
-
-    for header_row in range(max_header + 1):
-        data = raw.iloc[header_row + 1 :]
-        if data.empty:
-            continue
-
-        elem_scores: dict[int, tuple[int, float]] = {}
-        can_scores: dict[int, tuple[int, float]] = {}
-
-        for col in range(raw.shape[1]):
-            header_text = raw.iat[header_row, col] if header_row < len(raw) else ""
-            col_series = data.iloc[:, col]
-
-            elem_hits = max(
-                value_match_score(col_series, element_norms, False),
-                value_match_score(col_series, element_norms, True),
-            )
-            elem_scores[col] = (
-                elem_hits,
-                header_hint_score(header_text, DATA_ELEMENT_HEADER_HINTS),
-            )
-
-            can_hits = max(
-                value_match_score(col_series, dbc_signal_norms, False),
-                value_match_score(col_series, dbc_signal_norms, True),
-            )
-            can_scores[col] = (
-                can_hits,
-                header_hint_score(header_text, CAN_SIGNAL_HEADER_HINTS),
-            )
-
-        for ec, (eh, ehint) in elem_scores.items():
-            for cc, (ch, chint) in can_scores.items():
-                if ec == cc or eh <= 0:
-                    continue
-                score = eh * 15 + ch * 10 + ehint + chint
-                detection = SheetMappingDetection(
-                    header_row=header_row,
-                    element_col=ec,
-                    can_col=cc,
-                    element_hits=eh,
-                    score=score,
-                )
-                if best is None or detection.score > best.score:
-                    best = detection
-
-    return best
-
-
 def resolve_excel_sheet_name(excel_file: Any, requested_sheet: str) -> str:
     by_norm = {str(s).strip().lower(): str(s) for s in excel_file.sheet_names}
     key = requested_sheet.strip().lower()
@@ -877,167 +773,6 @@ def resolve_excel_sheet_name(excel_file: Any, requested_sheet: str) -> str:
             f"Sheet '{requested_sheet}' was not found in Excel.\nAvailable sheets: {available}"
         )
     return by_norm[key]
-
-
-def read_excel_mapping_for_sheet(
-    excel_file: Any,
-    requested_sheet: str,
-    all_interfaces: list[dict[str, Any]],
-    dbc_signal_names: set[str],
-) -> tuple[
-    dict[str, str],
-    dict[tuple[str, str], str],
-    list[str],
-]:
-    sheet = resolve_excel_sheet_name(excel_file, requested_sheet)
-
-    element_names = {
-        str(e.get("name", ""))
-        for intf in all_interfaces
-        for e in (intf.get("elements", []) or [])
-        if e.get("name")
-    }
-    element_norms = {norm(x) for x in element_names}
-    dbc_norms = {norm(x) for x in dbc_signal_names}
-
-    interface_by_norm = {
-        norm(str(i.get("name", ""))): str(i.get("name", ""))
-        for i in all_interfaces
-        if i.get("name")
-    }
-    interface_norms = set(interface_by_norm)
-
-    element_to_interfaces: dict[str, list[str]] = defaultdict(list)
-    for intf in all_interfaces:
-        ik = norm(intf.get("name", ""))
-        for e in intf.get("elements", []) or []:
-            ek = norm(e.get("name", ""))
-            if ik and ek and ik not in element_to_interfaces[ek]:
-                element_to_interfaces[ek].append(ik)
-
-    raw = pd.read_excel(
-        excel_file,
-        sheet_name=sheet,
-        header=None,
-        dtype=object,
-        engine="openpyxl",
-    )
-
-    det = detect_mapping_columns(raw, element_norms, dbc_norms)
-    if det is None or det.element_hits <= 0:
-        raise RuntimeError(
-            f"Could not detect Data Element/CAN Signal columns in sheet '{sheet}'.\n"
-            "Check that Data Element names match the TXT schema and that a CAN "
-            "signal column exists."
-        )
-
-    def find_interface_in_text(value: Any) -> str:
-        if value is None or pd.isna(value):
-            return ""
-        txt = str(value).strip()
-        if not txt:
-            return ""
-        k = norm(txt)
-        if k in interface_norms:
-            return k
-        parts = re.split(r"[./\\:]", txt)
-        if len(parts) > 1:
-            for part in parts[:-1]:
-                pk = norm(part)
-                if pk in interface_norms:
-                    return pk
-        return ""
-
-    best_interface_col: int | None = None
-    best_interface_hits = 0
-    for c in range(raw.shape[1]):
-        hits = 0
-        for r in range(det.header_row + 1, len(raw)):
-            if find_interface_in_text(raw.iat[r, c]):
-                hits += 1
-        if hits > best_interface_hits:
-            best_interface_hits = hits
-            best_interface_col = c
-
-    log(
-        f"  [{requested_sheet}] sheet='{sheet}', header={det.header_row + 1}, "
-        f"DataElement col={det.element_col + 1}, CAN col={det.can_col + 1}, "
-        f"Interface col={best_interface_col + 1 if best_interface_col is not None else '-'}"
-    )
-
-    mapping: dict[str, str] = {}
-    interface_mapping: dict[tuple[str, str], str] = {}
-    matched_interfaces: list[str] = []
-    matched_interface_keys: set[str] = set()
-    current_interface_key = ""
-
-    for r in range(det.header_row + 1, len(raw)):
-        if best_interface_col is not None:
-            ik = find_interface_in_text(raw.iat[r, best_interface_col])
-            if ik:
-                current_interface_key = ik
-
-        elem_cell = raw.iat[r, det.element_col]
-        can_cell = raw.iat[r, det.can_col]
-        elem_raw = "" if pd.isna(elem_cell) else str(elem_cell).strip()
-        can_raw = "" if pd.isna(can_cell) else str(can_cell).strip()
-        if not elem_raw:
-            continue
-
-        elem_key_full = norm(elem_raw)
-        elem_key_last = norm(last_token(elem_raw))
-        if elem_key_full in element_norms:
-            elem_key = elem_key_full
-            elem_display = last_token(elem_raw) or elem_raw
-        elif elem_key_last in element_norms:
-            elem_key = elem_key_last
-            elem_display = last_token(elem_raw)
-        else:
-            continue
-
-        interface_key = find_interface_in_text(elem_raw) or current_interface_key
-        if not interface_key:
-            owners = element_to_interfaces.get(elem_key, [])
-            if len(owners) == 1:
-                interface_key = owners[0]
-
-        interface_name = interface_by_norm.get(interface_key, "")
-
-        can_candidate = can_raw
-        if can_candidate:
-            can_key_full = norm(can_candidate)
-            can_key_last = norm(last_token(can_candidate))
-            if can_key_full not in dbc_norms and can_key_last in dbc_norms:
-                can_candidate = last_token(can_candidate)
-
-        if can_candidate:
-            if interface_key:
-                specific_key = (interface_key, elem_key)
-                old = interface_mapping.get(specific_key)
-                if old and old != can_candidate:
-                    log(
-                        f"  [WARN MAPPING CONFLICT] {requested_sheet} row {r + 1}: "
-                        f"{interface_name}.{elem_display}: '{old}' vs '{can_candidate}'. "
-                        f"Keeping '{old}'."
-                    )
-                else:
-                    interface_mapping[specific_key] = can_candidate
-
-            old = mapping.get(elem_key)
-            if old and old != can_candidate:
-                log(
-                    f"  [WARN ELEMENT FALLBACK CONFLICT] {requested_sheet} row {r + 1}: "
-                    f"{elem_display}: '{old}' vs '{can_candidate}'. "
-                    "Interface-specific mapping will be preferred."
-                )
-            else:
-                mapping[elem_key] = can_candidate
-
-        if interface_name and interface_key not in matched_interface_keys:
-            matched_interface_keys.add(interface_key)
-            matched_interfaces.append(interface_name)
-
-    return mapping, interface_mapping, matched_interfaces
 
 
 def interfaces_from_names(
@@ -1066,28 +801,21 @@ def select_input_interfaces(
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    # 1) Preserve known architecture input ordering where present in schema.
-    for expected_name in INPUT_INTERFACE_ORDER:
-        k = norm(expected_name)
-        if k in by_norm and k not in seen:
-            selected.append(by_norm[k])
-            seen.add(k)
-
-    # 2) Include any extra interfaces actually represented in SWC_INF Excel.
+    # Include interfaces represented by the selected input sheets, in workbook order.
     for intf in excel_matched_interfaces:
         k = norm(intf.get("name", ""))
         if k and k not in seen:
             selected.append(intf)
             seen.add(k)
 
-    # 3) Include interfaces referenced only by YAML CAN overrides.
+    # Include interfaces referenced only by YAML CAN overrides.
     for m in config_mappings:
         k = norm(m.interface)
         if k in by_norm and k not in seen:
             selected.append(by_norm[k])
             seen.add(k)
 
-    # 4) Include interfaces referenced only by YAML constant forces.
+    # Include interfaces referenced only by YAML constant forces.
     for force in input_forces:
         k = norm(force.interface)
         if k in by_norm and k not in seen:
@@ -1122,7 +850,7 @@ def apply_input_mapping_config(
         target = mapping.target_key
         if target not in available_targets:
             raise RuntimeError(
-                f"Configured input target does not exist in TXT schema:\n  {mapping.target_name}"
+                f"Configured input target does not exist in signal definitions:\n  {mapping.target_name}"
             )
 
         candidates = list(signal_candidates.get(norm(mapping.can_signal), []))
@@ -1172,7 +900,7 @@ def validate_input_forces(
         target = force.target_key
         if target not in available_targets:
             raise RuntimeError(
-                "Configured input force target does not exist in TXT schema:\n"
+                "Configured input force target does not exist in signal definitions:\n"
                 f"  {force.target_name}"
             )
 
@@ -1425,6 +1153,7 @@ def build_mat_scenario(
     formulas_by_target: dict[tuple[str, str], str] | None = None,
     status_mappings_by_target: dict[tuple[str, str], dict[float, float]] | None = None,
     forces_by_target: dict[tuple[str, str], float] | None = None,
+    prepend_zero: bool = True,
 ) -> tuple[dict[str, Any], SideStats]:
     scenario: dict[str, Any] = {}
     stats = SideStats()
@@ -1448,7 +1177,8 @@ def build_mat_scenario(
             dtype = str(elem.get("dataType", "double") or "double")
             target_key = (norm(intf_name), norm(elem_name))
             target_name = f"{intf_name}.{elem_name}"
-            is_forced = side_name == "SWC_INF" and target_key in forces_by_target
+            is_input = side_name in ("input", "SWC_INF")
+            is_forced = is_input and target_key in forces_by_target
 
             status = "NO_MAPPING"
             t = np.array([], dtype=np.float64)
@@ -1476,7 +1206,8 @@ def build_mat_scenario(
 
                 if (
                     PREPEND_ZERO_TO_INPUT
-                    and side_name == "SWC_INF"
+                    and prepend_zero
+                    and is_input
                     and t.size > 0
                     and y.size > 0
                     and float(t[0]) > INPUT_ZERO_TIME_EPS
@@ -1538,8 +1269,8 @@ def save_raw_scenarios_mat(
     output_scenario: dict[str, Any],
 ) -> None:
     """Write both prepared scenarios into one temporary MAT file."""
-    if not input_scenario or not output_scenario:
-        raise RuntimeError("Input/output raw scenarios must both be non-empty.")
+    if not input_scenario and not output_scenario:
+        raise RuntimeError("At least one input/output raw scenario must be non-empty.")
     savemat(
         path,
         {
@@ -1625,26 +1356,27 @@ end
 
 
 def make_batch_dataset_packager_script(
-    jobs: list[tuple[Path, Path, Path]], script_path: Path
+    jobs: list[tuple[Path, Path | None, Path | None]], script_path: Path
 ) -> None:
     """Build all Dataset files in one MATLAB session, retaining original packager logic."""
     lines = ["%% AUTO-GENERATED BLF batch packager", "jobs = {"]
     for raw_mat, input_mat, output_mat in jobs:
         lines.append(
             f"    '{matlab_quote(str(raw_mat))}', "
-            f"'{matlab_quote(str(input_mat))}', "
-            f"'{matlab_quote(str(output_mat))}';"
+            f"'{matlab_quote(str(input_mat)) if input_mat else ''}', "
+            f"'{matlab_quote(str(output_mat)) if output_mat else ''}';"
         )
     lines += [
         "};",
         "for k = 1:size(jobs, 1)",
         "    S = load(jobs{k,1}, 'RawInputScenario', 'RawOutputScenario');",
-        "    Scenario = localBuildDataset(S.RawInputScenario);",
-        "    save(jobs{k,2}, 'Scenario', '-v7.3');",
-        "    inputCount = numElements(Scenario);",
-        "    Scenario = localBuildDataset(S.RawOutputScenario);",
-        "    save(jobs{k,3}, 'Scenario', '-v7.3');",
-        "    fprintf('[PACKAGER] %d/%d input=%d output=%d\\n', k, size(jobs,1), inputCount, numElements(Scenario));",
+        "    for side = 2:3",
+        "        if isempty(jobs{k,side}), continue; end",
+        "        if side == 2, raw = S.RawInputScenario; else, raw = S.RawOutputScenario; end",
+        "        Scenario = localBuildDataset(raw);",
+        "        save(jobs{k,side}, 'Scenario', '-v7.3');",
+        "        fprintf('[PACKAGER] %d/%d side=%d elements=%d\\n', k, size(jobs,1), side, numElements(Scenario));",
+        "    end",
         "end",
     ]
     # Reuse the established MATLAB localBuildDataset code verbatim.
@@ -1765,7 +1497,7 @@ def print_side_summary(label: str, stats: SideStats) -> None:
 def _convert(paths: SelectedPaths) -> int:
     total_started = time.perf_counter()
     log("=" * 72)
-    log(" BLF -> Signal Editor Dataset MAT")
+    log(" BLF -> MAT")
     log("=" * 72)
 
     load_runtime_dependencies()
@@ -1780,37 +1512,31 @@ def _convert(paths: SelectedPaths) -> int:
     log(f"  YAML   : {paths.mapping_config if paths.mapping_config else '(none)'}")
     log(f"  Output : {paths.output_folder}")
 
-    started = start_step(1, 5, "Read TXT schema")
-    all_interfaces = load_signal_schema(paths.schema_files)
-    schema_signal_count = sum(len(i.get("elements", []) or []) for i in all_interfaces)
-    finish_step(
-        started,
-        f"{len(all_interfaces)} interface(s), {schema_signal_count} signal(s)",
-    )
+    from .mapping import resolve_setup
 
-    started = start_step(2, 5, "Load DBC definitions")
-    signal_candidates, dbc_signal_names = load_dbc_folder(paths.dbc_folder)
+    started = start_step(1, 5, "Load optional DBC definitions")
+    signal_candidates, dbc_signal_names = (
+        load_dbc_folder(paths.dbc_folder) if paths.dbc_folder else ({}, set())
+    )
     finish_step(started, f"{len(dbc_signal_names)} unique CAN signal(s)")
-
-    started = start_step(3, 5, "Resolve Excel/YAML mappings")
-    with pd.ExcelFile(paths.excel, engine="openpyxl") as excel_file:
-        in_elem_map, in_specific_map, in_interface_names = read_excel_mapping_for_sheet(
-            excel_file, "SWC_INF", all_interfaces, dbc_signal_names
-        )
-        out_elem_map, out_specific_map, out_interface_names = read_excel_mapping_for_sheet(
-            excel_file, "SWC_OUTF", all_interfaces, dbc_signal_names
-        )
-
-    excel_input_interfaces = interfaces_from_names(all_interfaces, in_interface_names)
-    input_interfaces = select_input_interfaces(
-        all_interfaces, excel_input_interfaces, input_mapping_config, input_forces
+    started = start_step(2, 5, "Resolve optional Excel/TXT/YAML mappings")
+    setup = resolve_setup(
+        paths, signal_candidates, dbc_signal_names, input_mapping_config, input_forces
     )
-    if not input_interfaces:
-        raise RuntimeError("No SWC_INF interface could be resolved from TXT schema + Excel/YAML.")
-
-    output_interfaces = interfaces_from_names(all_interfaces, out_interface_names)
-    if not output_interfaces:
-        raise RuntimeError("No SWC_OUTF interface could be resolved from TXT schema + Excel.")
+    all_interfaces = setup.interfaces
+    input_interfaces = select_input_interfaces(
+        all_interfaces,
+        interfaces_from_names(all_interfaces, setup.input_names),
+        input_mapping_config,
+        input_forces,
+    )
+    output_interfaces = interfaces_from_names(all_interfaces, setup.output_names)
+    in_elem_map, in_specific_map = setup.input_elements, setup.input_specific
+    out_elem_map, out_specific_map = setup.output_elements, setup.output_specific
+    if not input_interfaces and not output_interfaces and paths.output_format == "dataset":
+        raise RuntimeError(
+            "Dataset export needs signal definitions: supply DBC, Excel, TXT or YAML. Use --format mat for raw CAN frames."
+        )
 
     apply_input_mapping_config(
         input_interfaces=input_interfaces,
@@ -1849,35 +1575,16 @@ def _convert(paths: SelectedPaths) -> int:
     )
     requested_signals.update(collect_can_signals(output_interfaces, out_elem_map, out_specific_map))
 
-    started = start_step(4, 5, "Decode all BLF files and prepare scenarios")
+    started = start_step(3, 5, "Decode all BLF files and prepare scenarios")
     decode_requests = build_decode_requests(requested_signals, signal_candidates)
     used_names: set[str] = set()
-    packaged_files: list[tuple[Path, Path]] = []
+    packaged_files: list[tuple[Path | None, Path | None]] = []
+    frame_files: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="signal_editor_dataset_") as td:
         workdir = Path(td)
-        jobs: list[tuple[Path, Path, Path]] = []
+        jobs: list[tuple[Path, Path | None, Path | None]] = []
         for index, blf_path in enumerate(paths.blf_files, start=1):
             log(f"\n  [BLF {index}/{len(paths.blf_files)}] {blf_path.name}")
-            decoded, duration = decode_blf(blf_path, decode_requests)
-            input_scenario, input_stats = build_mat_scenario(
-                side_name="SWC_INF",
-                interfaces=input_interfaces,
-                element_to_can=in_elem_map,
-                interface_element_to_can=in_specific_map,
-                decoded=decoded,
-                duration=duration,
-                formulas_by_target=input_formulas,
-                status_mappings_by_target=input_status_mappings,
-                forces_by_target=input_forces_by_target,
-            )
-            output_scenario, output_stats = build_mat_scenario(
-                side_name="SWC_OUTF",
-                interfaces=output_interfaces,
-                element_to_can=out_elem_map,
-                interface_element_to_can=out_specific_map,
-                decoded=decoded,
-                duration=duration,
-            )
             # Distinct subfolders can contain BLFs with identical stems.
             stem = blf_path.stem
             if stem.lower() in used_names:
@@ -1886,31 +1593,88 @@ def _convert(paths: SelectedPaths) -> int:
                     suffix += 1
                 stem = f"{stem}_{suffix}"
             used_names.add(stem.lower())
-            input_mat = paths.output_folder / f"{stem}_input.mat"
-            output_mat = paths.output_folder / f"{stem}_output.mat"
+            if paths.dbc_folder:
+                decoded, duration = decode_blf(blf_path, decode_requests)
+            else:
+                from .frames import export_frames
+
+                frame_mat = paths.output_folder / f"{stem}.mat"
+                duration = export_frames(blf_path, frame_mat)
+                frame_files.append(frame_mat)
+                decoded = {}
+
+            input_scenario, input_stats = build_mat_scenario(
+                side_name="input",
+                interfaces=input_interfaces,
+                element_to_can=in_elem_map,
+                interface_element_to_can=in_specific_map,
+                decoded=decoded,
+                duration=duration,
+                formulas_by_target=input_formulas,
+                status_mappings_by_target=input_status_mappings,
+                forces_by_target=input_forces_by_target,
+                prepend_zero=bool(paths.excel or paths.schema_files),
+            )
+            output_scenario, output_stats = build_mat_scenario(
+                side_name="output",
+                interfaces=output_interfaces,
+                element_to_can=out_elem_map,
+                interface_element_to_can=out_specific_map,
+                decoded=decoded,
+                duration=duration,
+            )
+            inferred_only = paths.dbc_folder and not any(
+                (paths.excel, paths.schema_files, input_mapping_config, input_forces)
+            )
+            input_suffix = "signals" if inferred_only else "input"
+            input_mat = (
+                paths.output_folder / f"{stem}_{input_suffix}.mat" if input_scenario else None
+            )
+            output_mat = paths.output_folder / f"{stem}_output.mat" if output_scenario else None
+            if not input_scenario and not output_scenario:
+                continue
+            if paths.output_format == "mat":
+                for target, scenario in (
+                    (input_mat, input_scenario),
+                    (output_mat, output_scenario),
+                ):
+                    if target:
+                        savemat(
+                            target,
+                            {"Scenario": scenario},
+                            do_compression=True,
+                            long_field_names=True,
+                        )
+                packaged_files.append((input_mat, output_mat))
+                print_side_summary("Input", input_stats)
+                print_side_summary("Output", output_stats)
+                continue
             raw_mat = workdir / f"raw_{index:05d}.mat"
             save_raw_scenarios_mat(raw_mat, input_scenario, output_scenario)
             jobs.append((raw_mat, input_mat, output_mat))
             packaged_files.append((input_mat, output_mat))
-            print_side_summary("SWC_INF", input_stats)
-            print_side_summary("SWC_OUTF", output_stats)
-        finish_step(started, f"Prepared {len(jobs)} BLF scenario pair(s)")
+            print_side_summary("Input", input_stats)
+            print_side_summary("Output", output_stats)
+        finish_step(started, f"Prepared {len(paths.blf_files)} BLF file(s)")
 
-        started = start_step(5, 5, "Package all Dataset MAT files (one MATLAB launch)")
-        helper = workdir / "package_datasets.m"
-        make_batch_dataset_packager_script(jobs, helper)
-        run_matlab_batch(paths.matlab_exe, helper, cwd=workdir)
-        missing = [str(p) for pair in packaged_files for p in pair if not p.is_file()]
-        if missing:
-            raise RuntimeError("MATLAB did not create expected MAT files:\n" + "\n".join(missing))
-        finish_step(started, f"{len(jobs) * 2} MAT files packaged")
+        if jobs:
+            started = start_step(5, 5, "Package Dataset MAT files (one MATLAB launch)")
+            helper = workdir / "package_datasets.m"
+            make_batch_dataset_packager_script(jobs, helper)
+            run_matlab_batch(paths.matlab_exe, helper, cwd=workdir)
+            missing = [str(p) for pair in packaged_files for p in pair if p and not p.is_file()]
+            if missing:
+                raise RuntimeError(
+                    "MATLAB did not create expected MAT files:\n" + "\n".join(missing)
+                )
+            finish_step(started, f"{len(jobs)} scenario batch(es) packaged")
 
     log("\n[SUMMARY]")
     log(f"  BLF files : {len(paths.blf_files)}")
-    log(f"  MAT files : {len(packaged_files) * 2}")
+    log(f"  MAT files : {sum(bool(p) for pair in packaged_files for p in pair) + len(frame_files)}")
     log(f"  Output    : {paths.output_folder}")
     log(f"  Total     : {time.perf_counter() - total_started:.2f}s")
-    log("  MATLAB    : 1 headless -batch invocation")
+    log("  MATLAB    : " + ("1 headless -batch invocation" if jobs else "not required"))
     return 0
 
 

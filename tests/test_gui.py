@@ -89,3 +89,45 @@ def test_gui_invalid_inputs_do_not_start_worker(app, monkeypatch):
     assert not app.busy
     assert app.status.get() == "Invalid inputs"
     assert errors
+
+
+@pytest.mark.gui
+def test_gui_blf_only(app, sample):
+    app.fields["blf"].set(str(sample["blf"]))
+    app.start_conversion()
+    wait_for_job(app)
+    assert app.status.get() == "Completed"
+    assert (sample["root"] / "mat_output/sample.mat").is_file()
+
+
+@pytest.mark.gui
+def test_gui_custom_excel_options_share_cli_validation(app, sample):
+    import pandas as pd
+
+    excel = sample["root"] / "gui.xlsx"
+    with pd.ExcelWriter(excel) as writer:
+        pd.DataFrame({"Target": ["Vehicle.Speed"], "Source": ["SpeedCAN"]}).to_excel(
+            writer, sheet_name="Custom", index=False
+        )
+    for name, value in {
+        "blf": str(sample["blf"]),
+        "dbc_folder": str(sample["root"] / "dbc"),
+        "excel": str(excel),
+        "element_column": "Target",
+        "can_column": "Source",
+        "header_row": "1",
+    }.items():
+        app.fields[name].set(value)
+    from tkinter import Listbox, Toplevel, ttk
+
+    app.select_sheets()
+    window = next(widget for widget in app.root.winfo_children() if isinstance(widget, Toplevel))
+    lists = [widget for widget in window.winfo_children() if isinstance(widget, Listbox)]
+    lists[0].selection_set(0)
+    apply = next(widget for widget in window.winfo_children() if isinstance(widget, ttk.Button))
+    apply.invoke()
+    assert app.sheets["input"] == ["Custom"]
+    app.start_conversion()
+    wait_for_job(app)
+    assert app.status.get() == "Completed"
+    assert (sample["root"] / "mat_output/sample_input.mat").is_file()

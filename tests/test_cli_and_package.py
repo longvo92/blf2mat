@@ -55,7 +55,8 @@ def test_check_reports_missing_matlab(monkeypatch, capsys):
         raise RuntimeError("MATLAB not installed")
 
     monkeypatch.setattr(checks, "find_matlab_executable", missing)
-    assert cli.main(["--check"]) == 1
+    assert cli.main(["--check"]) == 0
+    assert cli.main(["--check", "--format", "dataset"]) == 1
     assert "MATLAB not installed" in capsys.readouterr().out
 
 

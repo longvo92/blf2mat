@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "blf-to-mat"
 dynamic = ["version"]
-description = "Convert CAN BLF logs to Simulink Signal Editor Dataset MAT files, with CLI and GUI."
+description = "Convert CAN BLF logs to MAT or Simulink Datasets with optional project mappings, CLI and GUI."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 dependencies = [

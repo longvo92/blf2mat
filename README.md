@@ -2,127 +2,145 @@
 
 [Tiếng Việt](README.vi.md)
 
-Convert CAN BLF logs, DBC definitions, an Excel mapping workbook and TXT schemas
-into native Simulink Signal Editor Dataset MAT files. One versioned `.pyz` runs
-both the CLI and the Tkinter GUI, using the same conversion engine.
+A project-neutral CAN BLF converter with CLI and Tkinter GUI in one versioned
+`.pyz`. **Only BLF is required.** DBC, Excel, TXT schema, YAML, output folder and
+MATLAB are optional; add the inputs that match your workflow.
 
-## Requirements
+## Run
 
-- Python **3.11-3.14**, with Tcl/Tk for the GUI (included in standard Windows Python).
-- Python packages listed in `requirements.txt` delivered alongside the `.pyz`.
-- **MATLAB/Simulink R2024b+** with an available license for final Dataset serialization.
-  MATLAB is invoked once per conversion batch with `-batch`; SLDD is not required.
-
-The `.pyz` contains application source, not Python, MATLAB or native dependencies
-such as NumPy/SciPy. Install dependencies once into the same Python environment.
-The tool does not download or install anything at runtime. For an offline machine,
-prepare a compatible wheel directory beforehand and install with
-`python -m pip install --no-index --find-links wheels -r requirements.txt`.
-
-## Run the release
-
-Download `blf_to_mat-0.1.0.pyz` and `requirements.txt` from a release, then run:
+Python **3.11-3.14** is supported. Install `requirements.txt` supplied with the
+archive into the same Python environment. Tcl/Tk is needed only for the GUI.
+MATLAB/Simulink R2024b+ is needed only for native Dataset export.
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\blf_to_mat-0.1.0.pyz --version
-python .\blf_to_mat-0.1.0.pyz --check
+python .\blf_to_mat-0.1.0.pyz --blf .\capture.blf
 python .\blf_to_mat-0.1.0.pyz --gui
+python .\blf_to_mat-0.1.0.pyz --check
 ```
 
-No arguments also opens the GUI. Select the Excel workbook, DBC folder, a BLF
-file or folder, one or more TXT schemas and an output folder. YAML and the MATLAB
-executable are optional selections. Conversion runs in a background worker with
-live logs. Wait for it to finish before closing the window.
+No arguments opens the GUI. Choose a BLF file or a folder (searched recursively).
+Output defaults to `mat_output` beside a BLF file or inside the selected BLF
+folder. Use `--output` to override. `--cli` is optional when conversion arguments
+are supplied. `--help` and `--version` work without third-party packages.
 
-CLI conversion preserves the original flags:
+| Setup | Result |
+| --- | --- |
+| BLF only | `<stem>.mat`, containing CAN/CAN-FD `Frames` |
+| BLF + DBC | `<stem>_signals.mat`, decoded signals grouped by DBC message |
+| BLF + DBC + TXT | Schema interfaces/types; element names map directly to CAN names |
+| BLF + Excel, optionally DBC/TXT | Selected input/output mappings; infer targets when TXT is absent |
+| BLF + YAML, optionally DBC/TXT | Configured CAN mappings/transforms or constant forced inputs |
+| Any signal setup + `--format dataset` | Native Signal Editor Dataset, serialized by MATLAB |
+
+Without DBC, CAN signals cannot be decoded: raw frames are exported, and supplied
+signal definitions receive defaults/forces with warnings. YAML CAN overrides
+require DBC definitions for their named source signals. A raw-frame-only setup
+cannot produce a native Dataset; supply signal definitions or use ordinary MAT.
+
+## Flexible Excel mappings
+
+No project sheet names, column positions or bus order are required. The tool
+scans the first 20 rows for headers and known schema/DBC values. Recognized
+headers include `Data Element`/`Element`/`Target`, `CAN Signal`/`DBC Signal`/`Source`,
+`Interface`/`Bus`/`Group` and `Datatype`/`Type`.
 
 ```powershell
-python .\blf_to_mat-0.1.0.pyz --cli `
-  --excel .\Interface.xlsx --dbc-folder .\DBC --blf .\Logs `
-  --schema .\InputSignals.txt .\OutputSignals.txt --output .\Output `
-  --config .\signal_mapping.yaml `
-  --matlab "C:\Program Files\MATLAB\R2024b\bin\matlab.exe"
+python .\blf_to_mat-0.1.0.pyz --blf .\Logs --dbc-folder .\DBC `
+  --excel .\Mapping.xlsx --input-sheet "Inputs" --output-sheet "Outputs" `
+  --header-row 4 --element-column "Model name" --can-column "Network name" `
+  --interface-column "Bus name" --dtype-column "Storage type"
 ```
 
-`--cli` is optional when conversion flags are supplied. Use `--debug` for tracebacks.
-`--help` and `--version` work without installing dependencies.
+- Repeat `--input-sheet`/`--output-sheet` for multiple sheets. Selecting only one
+  side is supported. Without selections, mapping sheets become inputs and sheets
+  that cannot be detected are skipped with a warning. A workbook containing both
+  legacy `SWC_INF`/`SWC_OUTF` sheets keeps their input/output interpretation.
+- Column options accept exact header names (case-insensitive) or **1-based**
+  column numbers. `--header-row` is also 1-based. Explicit invalid selections fail.
+- Without TXT, use `Bus.Element` targets or an interface column; otherwise the bus
+  is `Signals`. Missing types default to double. A CAN-only mapping column uses
+  the CAN name as the element name. Duplicate conflicting mappings fail.
+- With TXT, targets are resolved against that schema; ambiguous element names
+  require a qualified target or interface column. Bus order follows mapping rows
+  or schema order, with no architecture-specific list.
+- GUI: choose **Select sheets...**, select input/output sheets, then enter column
+  names/numbers and the header row. Blank fields use automatic detection.
 
-## Input and output contracts
+## Signal definitions and MAT formats
 
-- Excel `.xlsx`/`.xlsm`: `SWC_INF` and `SWC_OUTF` sheets; automatic detection of
-  interface, Data Element and CAN Signal columns. Prefer qualified interface names
-  when elements are repeated across buses.
-- TXT: one scalar `Interface.Element : datatype` per line; multiple files merge.
-  Conflicting datatypes fail validation. MATLAB identifiers must be valid.
-- DBC: recursively loaded `.dbc` files. CAN ID and extended-frame flag identify
-  decode requests; repeated signal names are selected by observed sample count,
-  with ambiguity warnings.
-- BLF: one `.blf` or a directory recursively containing BLFs.
-- YAML: see [synthetic example](examples/signal_mapping.example.yaml).
-  `input_mappings` override input CAN sources with optional `status_mapping` and
-  arithmetic `formula`; order is decode → status mapping → formula → datatype.
-  `input_forces` hold non-CAN inputs constant and bypass these transforms.
-  Empty YAML selection loads `signal_mapping.yaml` beside the `.pyz`; source and
-  installed-package runs look in the working directory. Explicit `--config` wins.
-- Output: `<BLF_stem>_input.mat` and `<BLF_stem>_output.mat`. Repeated BLF stems
-  in a batch receive suffixes (`_2`, `_3`). **Existing output files are overwritten.**
-  Failures may leave partial output; rerun after correcting the reported problem.
-- Each MAT contains `Scenario`, a `Simulink.SimulationData.Dataset` with top-level
-  bus structs and `timeseries` leaves using zero-order hold. Missing samples default
-  to zero/false with warnings. Inputs whose first sample is after zero receive an
-  initial zero before configured transforms. Unsupported schema types fall back to
-  double with a warning. Preserve warnings when reviewing generated test stimuli.
+TXT files merge scalar `Interface.Element : datatype` definitions. Conflicting
+types and invalid MATLAB names fail validation. DBC-only export infers unique
+MATLAB-safe message/element names, keeps same-named signals from different messages
+independent, preserves observed sample times, and stores physical values as double.
 
-`--check` returns 0 when Python/dependency imports and MATLAB executable discovery
-pass, otherwise 1. It does not start MATLAB or verify its release/license, Simulink
-availability, GUI display or Dataset serialization. Conversion errors return 1,
-invalid CLI arguments return 2 and keyboard interruption returns 130.
+YAML [example](examples/signal_mapping.example.yaml): `input_mappings` can set
+`can_signal`, `status_mapping` (CAN → model) and `formula` (e.g. `x/10+5`). Transform
+order is CAN decode → status mapping → formula → datatype cast. `input_forces`
+hold non-CAN inputs constant over the log duration. Without Excel/TXT, YAML targets
+are inferred as double. With no `--config`, `signal_mapping.yaml` beside the `.pyz`
+is loaded when present; source/installed runs look in the working directory.
 
-## Develop and verify
+Ordinary MAT is the default and requires no MATLAB. Signal files contain
+`Scenario` structs with bus/element `Time` and `Data` fields; they are **not** native
+Simulink Datasets. Input/output files are emitted only for configured sides.
+Raw `Frames` contains relative `Time`, `Timestamp` as read from BLF, ID, channel,
+DLC, payload length, an N×64 uint8 payload matrix and Extended/FD/Remote/Error/BRS/
+ESI/Rx flags. `Length` distinguishes real payload from zero padding. Non-CAN BLF
+objects are outside this export. Timestamps follow the BLF reader's time origin.
+
+For Signal Editor, use `--format dataset [--matlab PATH]`. MATLAB is discovered
+when the path is omitted. For CLI compatibility, an explicit `--matlab` implies
+Dataset unless `--format` overrides it. MATLAB runs once for the entire batch;
+each file contains native `Scenario`, with bus structs and ZOH timeseries.
+SLDD is not required. Dataset serialization needs a live MATLAB/Simulink license.
+
+Missing mapped samples default to zero/false with warnings. Excel/TXT input
+setups retain the initial zero sample behavior before configured transforms;
+DBC-only export does not insert artificial samples. Integer casts round and
+saturate; unsupported schema types fall back to double with a warning. Inspect
+warnings before using generated stimuli. Same-named source signals in explicit
+Excel/TXT/YAML mappings retain sample-count-based DBC selection and ambiguity
+warnings; CAN channel-specific DBC routing is not configured by these options.
+
+**Existing output files are overwritten.** Duplicate stems within a batch receive
+`_2`, `_3`, etc. Failed runs can leave partial output. GUI conversion runs in a
+worker; wait for completion before closing. Use `--debug` for tracebacks.
+
+`--check` verifies dependency imports and reports optional GUI/MATLAB availability.
+Missing MATLAB does not fail the ordinary MAT check; `--check --format dataset`
+requires it. Executable discovery does not verify MATLAB release/license or native
+serialization; importing Tcl/Tk does not prove display availability. Exit codes:
+0 success, 1 conversion/check failure, 2 invalid CLI arguments, 130 interruption.
+
+## Develop, build and release
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\python scripts/check.py
 .\.venv\Scripts\python -m blf_to_mat --gui
-```
-
-The check runs Ruff, formatting, pytest and the `.pyz` build. Tests generate their
-own synthetic BLF/DBC/Excel inputs, exercise the Python pipeline and GUI, and mock
-the MATLAB process. They **do not prove native Dataset serialization**. GUI tests
-skip without a display locally; `BLF_REQUIRE_GUI=1` makes missing GUI support fail.
-GitHub checks require GUI tests on Windows and Linux (Xvfb), Python 3.11-3.14.
-
-Before production use or release acceptance, run the archive against a known
-reference dataset in a live MATLAB R2024b+ environment, load both MATs, confirm
-`isa(Scenario,'Simulink.SimulationData.Dataset')`, bus ordering, types, timestamps
-and expected signal values, then open them in Signal Editor. This manual gate is
-not covered by the hosted CI workflow.
-
-## Build and release
-
-```powershell
-python scripts/build_pyz.py
 python scripts/build_pyz.py --release-tag v0.1.0
 ```
 
-The build uses only the standard library and includes only `src/blf_to_mat/*.py`
-and embedded requirements. `dist/` contains the `.pyz`, a SHA-256 checksum and
-`requirements.txt` generated from `pyproject.toml`. No logs, vehicle data, user YAML,
-test fixtures or original standalone script are packaged. Identical sources built
-with the same Python/zlib produce identical archive bytes.
+Checks run Ruff, formatting, pytest and archive build. Tests use synthetic data,
+verify real ordinary MAT serialization, optional setups, workbook selection and
+GUI behavior. MATLAB calls are mocked: native Dataset serialization still needs
+manual validation with MATLAB R2024b+ and Signal Editor. GUI tests may skip locally
+without a display; `BLF_REQUIRE_GUI=1` requires them. CI requires GUI on Windows and
+Linux (Xvfb), Python 3.11-3.14, using one Tcl/Tk interpreter per GUI test module.
 
-Version lives only in `src/blf_to_mat/__init__.py`; update it and add a dated
-`CHANGELOG.md` section before a release. After checks and manual MATLAB acceptance,
-merge the reviewed PR, then explicitly publish the matching tag:
+Version lives in `src/blf_to_mat/__init__.py`; add a dated `CHANGELOG.md` section
+for each version. `scripts/build_pyz.py` uses only the standard library and outputs
+`.pyz`, SHA-256 checksum and requirements generated from `pyproject.toml` in `dist/`.
+It packages application source only, normalizes newlines, and excludes user data,
+YAML, fixtures, the original script and native dependencies. Same sources and
+Python/zlib produce identical bytes. The tool never downloads anything at runtime;
+for offline dependency installation, prepare compatible wheels and use
+`python -m pip install --no-index --find-links wheels -r requirements.txt`.
 
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The release workflow reruns the checks, requires matching tag/version/changelog,
-builds the archive, smoke-tests it without site packages, and publishes the three
-assets as a GitHub release. No PyPI publication. Publishing a tag is a release
-action; ordinary branch pushes and PRs produce checks/preview artifacts only.
+After reviewed changes are merged and relevant runtime validation is complete,
+explicitly push a matching tag (`git tag v0.1.0`, then `git push origin v0.1.0`).
+The release workflow reruns checks, validates tag/version/changelog, smoke-tests
+the archive without site packages, and publishes the three assets on GitHub.
+Branch/PR checks publish preview artifacts only; there is no PyPI publication.
