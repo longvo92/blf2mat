@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.1] - 2026-10-22
+
+- Skip Excel mapping rows containing configured keywords using `excel_skip_keywords` in YAML, in both CLI and GUI.
+
 ## [0.1.0] - 2026-10-18
 
 - Convert BLF logs to MAT using either the GUI or command line.

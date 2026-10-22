@@ -105,7 +105,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help=(
             "Optional YAML with input CAN mappings, status/formula transforms, "
-            "and constant input_forces for non-CAN inputs. If omitted, "
+            "constant input_forces for non-CAN inputs, and excel_skip_keywords to skip rows "
+            "containing any keyword in any cell (case-insensitive substring). If omitted, "
             "signal_mapping.yaml next to the .pyz (or in the working directory for source runs) is auto-loaded "
             "when present."
         ),

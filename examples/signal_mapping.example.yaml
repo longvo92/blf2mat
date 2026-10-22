@@ -1,4 +1,8 @@
 # Synthetic examples only. CAN decode -> status mapping -> formula -> datatype.
+# Skip Excel data rows containing any keyword in any cell (case-insensitive substring).
+# Applies to input/output sheets. Use [] (default) to keep every row.
+excel_skip_keywords: []
+# Example: excel_skip_keywords: ["ignore", "obsolete"]
 input_mappings:
   - interface: VehicleInputs
     element: VehicleSpeed

@@ -161,3 +161,35 @@ def test_gui_custom_excel_options_share_cli_validation(app, sample):
     wait_for_job(app)
     assert app.status.get() == "Completed"
     assert (sample["root"] / "mat_output/sample_input.mat").is_file()
+
+
+@pytest.mark.gui
+def test_gui_excel_keywords_use_yaml_config(app, sample):
+    import pandas as pd
+    from scipy.io import loadmat
+
+    excel = sample["root"] / "filtered.xlsx"
+    with pd.ExcelWriter(excel) as writer:
+        pd.DataFrame(
+            {
+                "Target": ["Vehicle.Speed", "Vehicle.Speed"],
+                "Source": ["SpeedCAN", "RequestCAN"],
+                "Notes": ["", "OBSOLETE mapping"],
+            }
+        ).to_excel(writer, sheet_name="Signals", index=False)
+    sample["config"].write_text("excel_skip_keywords: [obsolete]\n")
+    for name, value in {
+        "blf": str(sample["blf"]),
+        "dbc_folder": str(sample["root"] / "dbc"),
+        "excel": str(excel),
+        "config": str(sample["config"]),
+    }.items():
+        app.fields[name].set(value)
+    app.start_conversion()
+    wait_for_job(app)
+    assert app.status.get() == "Completed"
+    scenario = loadmat(sample["root"] / "mat_output/sample_input.mat", simplify_cells=True)[
+        "Scenario"
+    ]
+    assert scenario["Vehicle"]["Speed"]["Data"].tolist() == [0, 10, 30]
+    assert "skipped 1 row(s) matching excel_skip_keywords" in app.output.get("1.0", "end")

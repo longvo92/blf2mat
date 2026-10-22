@@ -41,11 +41,11 @@ in the same folder and run:
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\blf_to_mat-0.1.0.pyz --gui
+python .\blf_to_mat-0.1.1.pyz --gui
 ```
 
 Use the same Python for installation and running the tool. Run `blf-to-mat --check`
-or `python .\blf_to_mat-0.1.0.pyz --check` to diagnose missing dependencies.
+or `python .\blf_to_mat-0.1.1.pyz --check` to diagnose missing dependencies.
 
 ## Convert
 
@@ -61,7 +61,17 @@ blf-to-mat --blf .\capture.blf --dbc .\network.dbc
 blf-to-mat --blf .\Logs --dbc .\DBC
 ```
 
-With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.0.pyz`.
+With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.1.pyz`.
+
+To skip Excel data rows, add keywords to your YAML config and select it with
+`--config .\signal_mapping.yaml` or **YAML config** in the GUI:
+
+```yaml
+excel_skip_keywords: ["ignore", "obsolete"]
+```
+
+A row is skipped if any cell contains any keyword (case-insensitive substring),
+on both input and output sheets. Omit the setting or use `[]` to keep all rows.
 
 Output goes to `mat_output` beside the BLF file or inside the selected BLF folder.
 Use `--output` to choose another folder. BLF-only creates `<name>.mat` with frames;
