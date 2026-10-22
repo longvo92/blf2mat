@@ -176,6 +176,77 @@ def test_multiple_input_sheets(sample):
     assert list(scenario) == ["Vehicle", "Controller"]
 
 
+@pytest.mark.parametrize("explicit", [False, True])
+def test_excel_keywords_filter_all_cells_on_both_sides(sample, explicit, capsys):
+    excel = sample["root"] / "filtered.xlsx"
+    with pd.ExcelWriter(excel) as writer:
+        for sheet in ("SWC_INF", "SWC_OUTF"):
+            pd.DataFrame(
+                [
+                    ["Vehicle", "Speed", "SpeedCAN", "single", ""],
+                    ["", "Speed", "RequestCAN", "single", "Marked OBSOLETE today"],
+                    ["", "Ignored", "SpeedCAN", "invalid", "literal [skip] marker"],
+                    ["", "Kept", "RequestCAN", "uint8", "skipping is not a literal marker"],
+                    ["", "ObsoleteTarget", "SpeedCAN", "single", ""],
+                    ["", "BadSource", "ObsoleteCAN", "single", ""],
+                    ["ObsoleteBus", "BadBus", "SpeedCAN", "single", ""],
+                    ["Other", "BadType", "SpeedCAN", "obsolete_type", ""],
+                    ["", "Inherited", "RequestCAN", "uint8", ""],
+                ],
+                columns=["Interface", "Data Element", "CAN Signal", "Type", "Notes"],
+            ).to_excel(writer, sheet_name=sheet, index=False)
+    sample["config"].write_text('excel_skip_keywords: [" ObSoLeTe ", "[skip]"]\n')
+    argv = [*dbc_args(sample), "--excel", str(excel), "--config", str(sample["config"])]
+    if explicit:
+        argv += ["--input-sheet", "SWC_INF", "--output-sheet", "SWC_OUTF", "--header-row", "1"]
+    assert cli.main(argv) == 0
+    for side in ("input", "output"):
+        scenario = loadmat(sample["output"] / f"sample_{side}.mat", simplify_cells=True)["Scenario"]
+        assert set(scenario) == {"Vehicle", "Other"}
+        assert set(scenario["Vehicle"]) == {"Speed", "Kept"}
+        assert scenario["Vehicle"]["Speed"]["Data"].tolist() == (
+            [0, 10, 30] if side == "input" else [10, 30]
+        )
+        # Blank interface cells keep the workbook's group even after an excluded row.
+        assert set(scenario["Other"]) == {"Inherited"}
+    assert capsys.readouterr().out.count("skipped 6 row(s) matching excel_skip_keywords") == 2
+
+
+@pytest.mark.parametrize("setting", ["{}", "excel_skip_keywords: []"])
+def test_excel_keywords_disabled_by_default(sample, setting):
+    excel = custom_excel(
+        sample,
+        [["Bus", "CAN Signal", "Data Element"], ["Vehicle", "SpeedCAN", "ObsoleteSpeed"]],
+    )
+    sample["config"].write_text(setting)
+    assert (
+        cli.main([*dbc_args(sample), "--excel", str(excel), "--config", str(sample["config"])]) == 0
+    )
+    scenario = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    assert "ObsoleteSpeed" in scenario["Vehicle"]
+
+
+def test_excel_keywords_all_rows_excluded_fail_clearly(sample, capsys):
+    excel = custom_excel(
+        sample,
+        [["Bus", "CAN Signal", "Data Element"], ["Vehicle", "SpeedCAN", "ObsoleteSpeed"]],
+    )
+    sample["config"].write_text("excel_skip_keywords: [obsolete]\n")
+    assert (
+        cli.main([*dbc_args(sample), "--excel", str(excel), "--config", str(sample["config"])]) == 1
+    )
+    assert "No mapping rows were resolved" in capsys.readouterr().err
+    assert not list(sample["output"].glob("*.mat"))
+
+
+@pytest.mark.parametrize("value", ['"obsolete"', "null", "[1]", "[true]", '[""]', '["  "]', "{}"])
+def test_invalid_excel_keywords_config_rejected(sample, value, capsys):
+    sample["config"].write_text(f"excel_skip_keywords: {value}\n")
+    assert cli.main([*basic_args(sample), "--config", str(sample["config"])]) == 1
+    assert "'excel_skip_keywords' must" in capsys.readouterr().err
+    assert not list(sample["output"].glob("*.mat"))
+
+
 def test_same_signal_name_from_different_messages_is_independent(sample):
     dbc = sample["root"] / "dbc/sample.dbc"
     with dbc.open("a") as stream:

@@ -246,10 +246,40 @@ class InputForce:
         return f"{self.interface}.{self.element}"
 
 
+def load_mapping_config(config_path: Path | None) -> dict[str, Any]:
+    """Read the shared YAML configuration once for all conversion options."""
+    if config_path is None:
+        return {}
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Invalid YAML mapping config {config_path}: {exc}") from exc
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise RuntimeError("Mapping config root must be a YAML mapping/object.")
+    return raw
+
+
+def parse_excel_skip_keywords(raw: dict[str, Any]) -> tuple[str, ...]:
+    keywords = raw.get("excel_skip_keywords", [])
+    if not isinstance(keywords, list):
+        raise RuntimeError("'excel_skip_keywords' must be a YAML list of non-empty strings.")
+    if any(not isinstance(keyword, str) or not keyword.strip() for keyword in keywords):
+        raise RuntimeError("'excel_skip_keywords' must contain only non-empty strings.")
+    return tuple(dict.fromkeys(keyword.strip().casefold() for keyword in keywords))
+
+
 def load_input_mapping_config(
     config_path: Path | None,
 ) -> tuple[list[InputCanMapping], list[InputForce]]:
-    """Load input CAN mappings and non-CAN constant forces from YAML.
+    return parse_input_mapping_config(load_mapping_config(config_path))
+
+
+def parse_input_mapping_config(
+    raw: dict[str, Any],
+) -> tuple[list[InputCanMapping], list[InputForce]]:
+    """Parse input CAN mappings and non-CAN constant forces from YAML data.
 
     ``input_mappings`` maps an Interface.DataElement to a CAN signal, with
     optional status/formula transforms.
@@ -258,19 +288,6 @@ def load_input_mapping_config(
     sourced from CAN. A forced input bypasses CAN decoding and is held constant
     over the entire BLF/simulation duration.
     """
-    if config_path is None:
-        return [], []
-
-    try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"Invalid YAML mapping config {config_path}: {exc}") from exc
-
-    if raw is None:
-        raw = {}
-    if not isinstance(raw, dict):
-        raise RuntimeError("Mapping config root must be a YAML mapping/object.")
-
     entries = raw.get("input_mappings", [])
     if entries is None:
         entries = []
@@ -1507,7 +1524,9 @@ def _convert(paths: SelectedPaths) -> int:
 
     load_runtime_dependencies()
     paths.output_folder.mkdir(parents=True, exist_ok=True)
-    input_mapping_config, input_forces = load_input_mapping_config(paths.mapping_config)
+    config = load_mapping_config(paths.mapping_config)
+    input_mapping_config, input_forces = parse_input_mapping_config(config)
+    excel_skip_keywords = parse_excel_skip_keywords(config)
 
     log("\n[CONFIG]")
     log(f"  BLF    : {len(paths.blf_files)} file(s)")
@@ -1526,7 +1545,12 @@ def _convert(paths: SelectedPaths) -> int:
     finish_step(started, f"{len(dbc_signal_names)} unique CAN signal(s)")
     started = start_step(2, 5, "Resolve optional Excel/TXT/YAML mappings")
     setup = resolve_setup(
-        paths, signal_candidates, dbc_signal_names, input_mapping_config, input_forces
+        paths,
+        signal_candidates,
+        dbc_signal_names,
+        input_mapping_config,
+        input_forces,
+        excel_skip_keywords,
     )
     all_interfaces = setup.interfaces
     input_interfaces = select_input_interfaces(

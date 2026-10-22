@@ -53,16 +53,28 @@ def column_index(raw: Any, row: int, option: str | None, kind: str) -> int | Non
 
 
 def read_sheet(
-    book: Any, sheet: str, paths: core.SelectedPaths, known_elements: set[str], known_can: set[str]
+    book: Any,
+    sheet: str,
+    paths: core.SelectedPaths,
+    known_elements: set[str],
+    known_can: set[str],
+    skip_keywords: tuple[str, ...] = (),
 ) -> list[tuple[str, str, str, str]]:
     raw = core.pd.read_excel(book, sheet_name=sheet, header=None, dtype=object)
     if raw.empty:
         return []
+    excluded = raw.apply(
+        lambda row: any(
+            keyword in cell(value).casefold() for value in row for keyword in skip_keywords
+        ),
+        axis=1,
+    )
     rows = [paths.header_row - 1] if paths.header_row else range(min(20, len(raw)))
     candidates = []
     for row in rows:
         if row >= len(raw):
             raise RuntimeError(f"Header row exceeds sheet {sheet!r} length.")
+        data = raw.iloc[row + 1 :].loc[~excluded]
         try:
             columns = {
                 kind: column_index(raw, row, getattr(paths, f"{kind}_column"), kind)
@@ -74,7 +86,7 @@ def read_sheet(
             continue
         if columns["can"] is None and known_can:
             scores = [
-                (core.value_match_score(raw.iloc[row + 1 :, index], known_can, True), index)
+                (core.value_match_score(data.iloc[:, index], known_can, True), index)
                 for index in range(raw.shape[1])
             ]
             scores.sort(reverse=True)
@@ -82,7 +94,7 @@ def read_sheet(
                 columns["can"] = scores[0][1]
         if columns["element"] is None and known_elements:
             scores = [
-                (core.value_match_score(raw.iloc[row + 1 :, index], known_elements, True), index)
+                (core.value_match_score(data.iloc[:, index], known_elements, True), index)
                 for index in range(raw.shape[1])
                 if index != columns["can"]
             ]
@@ -101,7 +113,7 @@ def read_sheet(
             for kind, index in columns.items()
             if index is not None
         )
-        hits = core.value_match_score(raw.iloc[row + 1 :, columns["can"]], known_can, True)
+        hits = core.value_match_score(data.iloc[:, columns["can"]], known_can, True)
         candidates.append((hints * 100 + hits, -row, columns))
     if not candidates:
         raise RuntimeError(
@@ -115,6 +127,7 @@ def read_sheet(
     )
     records = []
     current_interface = ""
+    skipped = 0
     for row in range(header + 1, len(raw)):
         values = {
             kind: cell(raw.iat[row, index]) if index is not None else ""
@@ -122,6 +135,9 @@ def read_sheet(
         }
         if values["interface"]:
             current_interface = values["interface"]
+        if excluded.iat[row]:
+            skipped += 1
+            continue
         source = values["can"]
         target = values["element"] or source
         if not target:
@@ -132,6 +148,8 @@ def read_sheet(
         if core.norm(source) not in known_can and core.norm(core.last_token(source)) in known_can:
             source = core.last_token(source)
         records.append((interface, target, source, values["dtype"]))
+    if skipped:
+        core.log(f"  Excel sheet={sheet!r}: skipped {skipped} row(s) matching excel_skip_keywords.")
     return records
 
 
@@ -204,6 +222,7 @@ def resolve_setup(
     names: set[str],
     mappings: list[core.InputCanMapping],
     forces: list[core.InputForce],
+    excel_skip_keywords: tuple[str, ...] = (),
 ) -> MappingSetup:
     setup = MappingSetup(
         interfaces=core.load_signal_schema(paths.schema_files) if paths.schema_files else []
@@ -233,7 +252,12 @@ def resolve_setup(
                 for sheet in sheets:
                     try:
                         records = read_sheet(
-                            book, sheet, paths, known_elements, {core.norm(name) for name in names}
+                            book,
+                            sheet,
+                            paths,
+                            known_elements,
+                            {core.norm(name) for name in names},
+                            excel_skip_keywords,
                         )
                     except RuntimeError as exc:
                         if (
