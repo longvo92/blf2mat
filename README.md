@@ -36,11 +36,11 @@ python -m pip install .
 blf-to-mat --gui
 ```
 
-For a packaged build, use the accompanying requirements:
+Packaged build:
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\blf_to_mat-0.1.2.pyz --gui
+python .\blf_to_mat-0.1.3.pyz --gui
 ```
 
 Use the same Python to install and run. Add `--check` to diagnose dependencies.
@@ -50,34 +50,36 @@ Use the same Python to install and run. Add `--check` to diagnose dependencies.
 In the GUI, select BLF, optional inputs and output format, then click **Convert**.
 **Select sheets...** customizes Excel mapping; blank fields use automatic detection.
 
-For the command line:
+CLI:
 
 ```powershell
 blf-to-mat --blf .\capture.blf
 blf-to-mat --blf .\capture.blf --dbc .\network.dbc
 ```
 
-With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.2.pyz`.
+With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.3.pyz`.
 
 ### TXT without Excel
 
-Leave **Excel workbook** blank and select one or more **TXT schemas** in the GUI,
+Leave **Excel workbook** blank and select **Input TXT schema** and **Output TXT schema**,
 or run:
 
 ```powershell
-blf-to-mat --blf .\capture.blf --dbc .\network.dbc --schema .\signals.txt
+blf-to-mat --blf .\capture.blf --dbc .\network.dbc --input-schema .\inputs.txt --output-schema .\outputs.txt
 ```
 
-Each TXT line declares a scalar signal, for example:
+TXT lines declare scalar signals:
 
 ```text
 VehicleInputs.VehicleSpeed : single
 VehicleInputs.Enable : boolean
 ```
 
-Element names (`VehicleSpeed`, `Enable`) match DBC signal names automatically.
-All TXT interfaces go to `<name>_input.mat`, regardless of file/interface names.
-Use Excel to select input/output sides, or YAML to map different CAN names.
+Element names match DBC signals.
+Input TXT exports `<name>_input.mat`; output TXT exports `<name>_output.mat`.
+Sides are optional. `--schema INPUT.txt OUTPUT.txt` uses that order;
+one TXT means input only. Do not mix legacy and explicit flags.
+YAML can map different input CAN names.
 Without DBC, TXT signals use defaults. BLF remains required.
 
 To skip Excel rows, select a YAML config containing:

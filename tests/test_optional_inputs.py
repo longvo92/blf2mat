@@ -101,14 +101,169 @@ def test_txt_workflow_without_workbook_or_matlab(sample, monkeypatch, with_dbc):
     argv = dbc_args(sample) if with_dbc else basic_args(sample)
     assert cli.main([*argv, "--schema", str(sample["schema"]), str(second)]) == 0
     scenario = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
-    assert set(scenario) == {"Vehicle", "ControllerOutputs"}
+    assert set(scenario) == {"Vehicle"}
     speed = scenario["Vehicle"]["SpeedCAN"]
     assert speed["Data"].dtype.name == "float32"
     assert speed["Data"].tolist() == ([0, 10, 30] if with_dbc else [0, 0])
-    assert scenario["ControllerOutputs"]["RequestCAN"]["Data"].tolist() == (
-        [0, 2, 3] if with_dbc else [0, 0]
+    output = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert set(output) == {"ControllerOutputs"}
+    assert output["ControllerOutputs"]["RequestCAN"]["Data"].tolist() == (
+        [2, 3] if with_dbc else [0, 0]
     )
-    assert not (sample["output"] / "sample_output.mat").exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_txt_sides_keep_shared_bus_elements_separate(sample, legacy):
+    sample["schema"].write_text("Shared.SpeedCAN : single\n")
+    output_schema = sample["root"] / "second.txt"
+    output_schema.write_text("Shared.RequestCAN : uint8\n")
+    flags = (
+        ["--schema", str(sample["schema"]), str(output_schema)]
+        if legacy
+        else ["--input-schema", str(sample["schema"]), "--output-schema", str(output_schema)]
+    )
+    assert cli.main([*dbc_args(sample), *flags]) == 0
+    inputs = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    outputs = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert set(inputs["Shared"]) == {"SpeedCAN"}
+    assert set(outputs["Shared"]) == {"RequestCAN"}
+    assert inputs["Shared"]["SpeedCAN"]["Data"].tolist() == [0, 10, 30]
+    assert outputs["Shared"]["RequestCAN"]["Data"].tolist() == [2, 3]
+
+
+def test_same_txt_target_can_have_independent_side_datatypes(sample):
+    sample["schema"].write_text("Shared.SpeedCAN : single\n")
+    output_schema = sample["root"] / "second.txt"
+    output_schema.write_text("Shared.SpeedCAN : uint8\n")
+    assert (
+        cli.main(
+            [
+                *dbc_args(sample),
+                "--input-schema",
+                str(sample["schema"]),
+                "--output-schema",
+                str(output_schema),
+            ]
+        )
+        == 0
+    )
+    inputs = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    outputs = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert inputs["Shared"]["SpeedCAN"]["Data"].dtype.name == "float32"
+    assert outputs["Shared"]["SpeedCAN"]["Data"].dtype.name == "uint8"
+
+
+def test_txt_output_only(sample):
+    sample["schema"].write_text("Vehicle.SpeedCAN : single\n")
+    assert cli.main([*dbc_args(sample), "--output-schema", str(sample["schema"])]) == 0
+    assert not (sample["output"] / "sample_input.mat").exists()
+    output = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert output["Vehicle"]["SpeedCAN"]["Data"].tolist() == [10, 30]
+
+
+def test_txt_sides_keep_yaml_input_mappings_and_forces(sample):
+    sample["schema"].write_text("Shared.Speed : single\nShared.Enable : boolean\n")
+    output_schema = sample["root"] / "output.txt"
+    output_schema.write_text("Shared.RequestCAN : uint8\n")
+    sample["config"].write_text(
+        "input_mappings:\n- {interface: Shared, element: Speed, can_signal: SpeedCAN}\n"
+        "input_forces:\n- {interface: Shared, element: Enable, value: true}\n"
+    )
+    assert (
+        cli.main(
+            [
+                *dbc_args(sample),
+                "--input-schema",
+                str(sample["schema"]),
+                "--output-schema",
+                str(output_schema),
+                "--config",
+                str(sample["config"]),
+            ]
+        )
+        == 0
+    )
+    inputs = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    assert inputs["Shared"]["Speed"]["Data"].tolist() == [0, 10, 30]
+    assert inputs["Shared"]["Enable"]["Data"].tolist() == [1, 1]
+    assert set(inputs["Shared"]) == {"Speed", "Enable"}
+
+
+def test_explicit_txt_sides_with_excel(sample):
+    sample["schema"].write_text("Shared.Speed : single\n")
+    output_schema = sample["root"] / "output.txt"
+    output_schema.write_text("Shared.Speed : uint8\n")
+    excel = sample["root"] / "sides.xlsx"
+    with pd.ExcelWriter(excel) as writer:
+        for sheet, source in (("SWC_INF", "SpeedCAN"), ("SWC_OUTF", "RequestCAN")):
+            pd.DataFrame(
+                {"Interface": ["Shared"], "Data Element": ["Speed"], "CAN Signal": [source]}
+            ).to_excel(writer, sheet_name=sheet, index=False)
+    assert (
+        cli.main(
+            [
+                *dbc_args(sample),
+                "--excel",
+                str(excel),
+                "--input-schema",
+                str(sample["schema"]),
+                "--output-schema",
+                str(output_schema),
+            ]
+        )
+        == 0
+    )
+    inputs = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    outputs = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert inputs["Shared"]["Speed"]["Data"].tolist() == [0, 10, 30]
+    assert outputs["Shared"]["Speed"]["Data"].tolist() == [2, 3]
+    assert outputs["Shared"]["Speed"]["Data"].dtype.name == "uint8"
+
+
+def test_txt_dataset_packaging_receives_separate_scenarios(sample, monkeypatch):
+    sample["schema"].write_text("Shared.SpeedCAN : single\n")
+    output_schema = sample["root"] / "output.txt"
+    output_schema.write_text("Shared.RequestCAN : uint8\n")
+    captured = []
+
+    def package(executable, script, cwd):
+        raw = loadmat(next(cwd.glob("raw_*.mat")), simplify_cells=True)
+        captured.append(raw)
+        for side in ("input", "output"):
+            (sample["output"] / f"sample_{side}.mat").touch()
+
+    monkeypatch.setattr(core, "run_matlab_batch", package)
+    assert (
+        cli.main(
+            [
+                *dbc_args(sample),
+                "--schema",
+                str(sample["schema"]),
+                str(output_schema),
+                "--format",
+                "dataset",
+                "--matlab",
+                __file__,
+            ]
+        )
+        == 0
+    )
+    assert len(captured) == 1
+    assert set(captured[0]["RawInputScenario"]["Shared"]) == {"SpeedCAN"}
+    assert set(captured[0]["RawOutputScenario"]["Shared"]) == {"RequestCAN"}
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_ambiguous_txt_cli_options_rejected(sample, mixed):
+    flags = ["--schema", str(sample["schema"])]
+    flags += (
+        ["--input-schema", str(sample["schema"])]
+        if mixed
+        else [str(sample["schema"]), str(sample["schema"])]
+    )
+    with pytest.raises(SystemExit) as exc:
+        cli.main([*basic_args(sample), *flags])
+    assert exc.value.code == 2
 
 
 def test_force_without_excel_schema_or_dbc(sample):
@@ -368,8 +523,18 @@ def test_txt_without_excel_from_built_archive(tmp_path, sample):
     archive = build(tmp_path / "release")
     (sample["root"] / "interfaces.xlsx").unlink()
     sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
+    output_schema = tmp_path / "output.txt"
+    output_schema.write_text("Controller.RequestCAN : uint8\n")
     result = subprocess.run(
-        [sys.executable, str(archive), *dbc_args(sample), "--schema", str(sample["schema"])],
+        [
+            sys.executable,
+            str(archive),
+            *dbc_args(sample),
+            "--input-schema",
+            str(sample["schema"]),
+            "--output-schema",
+            str(output_schema),
+        ],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -378,3 +543,6 @@ def test_txt_without_excel_from_built_archive(tmp_path, sample):
     assert result.returncode == 0, result.stdout + result.stderr
     scenario = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
     assert scenario["Vehicle"]["SpeedCAN"]["Data"].tolist() == [0, 10, 30]
+    output = loadmat(sample["output"] / "sample_output.mat", simplify_cells=True)["Scenario"]
+    assert set(output) == {"Controller"}
+    assert output["Controller"]["RequestCAN"]["Data"].tolist() == [2, 3]

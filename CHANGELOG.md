@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.3] - 2026-10-23
+
+- Select input and output TXT schemas separately in CLI and GUI to export two MAT files without Excel.
+- Fix `--schema INPUT.txt OUTPUT.txt` so the second TXT supplies output signals instead of merging into input.
+
 ## [0.1.2] - 2026-10-23
 
 - Clarify the TXT-without-Excel workflow in the GUI, command-line help and usage examples.

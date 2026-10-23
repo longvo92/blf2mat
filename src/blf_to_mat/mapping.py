@@ -20,6 +20,8 @@ HEADERS = {
 @dataclass
 class MappingSetup:
     interfaces: list[dict[str, Any]] = field(default_factory=list)
+    input_interfaces: list[dict[str, Any]] | None = None
+    output_interfaces: list[dict[str, Any]] | None = None
     input_names: list[str] = field(default_factory=list)
     output_names: list[str] = field(default_factory=list)
     input_elements: dict[str, str] = field(default_factory=dict)
@@ -224,8 +226,36 @@ def resolve_setup(
     forces: list[core.InputForce],
     excel_skip_keywords: tuple[str, ...] = (),
 ) -> MappingSetup:
+    sided = bool(paths.input_schema or paths.output_schema)
+    side_interfaces = {
+        side: core.load_signal_schema([path]) if path else []
+        for side, path in (("input", paths.input_schema), ("output", paths.output_schema))
+    }
+    if sided and not paths.excel:
+        # Keep complete definitions independent, even for shared interface/element names.
+        setup = MappingSetup(
+            interfaces=side_interfaces["input"] + side_interfaces["output"],
+            input_interfaces=side_interfaces["input"],
+            output_interfaces=side_interfaces["output"],
+        )
+        for side, interfaces in side_interfaces.items():
+            setattr(setup, side + "_names", [bus["name"] for bus in interfaces])
+            setattr(
+                setup,
+                side + "_elements",
+                {
+                    core.norm(element["name"]): element["name"]
+                    for bus in interfaces
+                    for element in bus["elements"]
+                },
+            )
+        return setup
     setup = MappingSetup(
-        interfaces=core.load_signal_schema(paths.schema_files) if paths.schema_files else []
+        interfaces=(side_interfaces["input"] + side_interfaces["output"])
+        if sided
+        else core.load_signal_schema(paths.schema_files)
+        if paths.schema_files
+        else []
     )
     schema_supplied = bool(paths.schema_files)
     known_elements = {
@@ -247,6 +277,7 @@ def resolve_setup(
                 inputs, outputs = list(book.sheet_names), []
             count = 0
             for side, sheets in (("input", inputs), ("output", outputs)):
+                definitions = side_interfaces[side] if sided else setup.interfaces
                 specific = getattr(setup, side + "_specific")
                 selected_names = getattr(setup, side + "_names")
                 for sheet in sheets:
@@ -279,7 +310,7 @@ def resolve_setup(
                         if schema_supplied:
                             owners = [
                                 bus
-                                for bus in setup.interfaces
+                                for bus in definitions
                                 if (not interface or core.norm(bus["name"]) == core.norm(interface))
                                 and any(
                                     core.norm(item["name"]) == core.norm(element)
@@ -295,7 +326,7 @@ def resolve_setup(
                             interface = owners[0]["name"]
                         else:
                             interface = interface or "Signals"
-                        add_target(setup.interfaces, interface, element, dtype)
+                        add_target(definitions, interface, element, dtype)
                         key = (core.norm(interface), core.norm(element))
                         if key in specific and specific[key] != source:
                             raise RuntimeError(
@@ -323,4 +354,8 @@ def resolve_setup(
             add_target(setup.interfaces, item.interface, item.element, "")
         if item.interface not in setup.input_names:
             setup.input_names.append(item.interface)
+    if sided:
+        # Explicit TXT sides also constrain Excel mappings to the declared targets.
+        setup.input_interfaces = side_interfaces["input"]
+        setup.output_interfaces = side_interfaces["output"]
     return setup
