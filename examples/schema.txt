@@ -1,5 +1,5 @@
 # Synthetic interface names; dimensions are scalar.
-# Without Excel, element names must match DBC signal names; all interfaces are inputs.
+# Element names match DBC signal names. Select this file as input or output schema.
 VehicleInputs.VehicleSpeed : single
 VehicleInputs.Enable : boolean
 ControllerOutputs.Request : uint8

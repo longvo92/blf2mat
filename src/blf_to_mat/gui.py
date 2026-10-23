@@ -44,11 +44,19 @@ class Application:
                 "dtype_column",
                 "header_row",
                 "output_format",
+                "input_schema",
+                "output_schema",
             )
         }
         if not self.fields["output_format"].get():
             self.fields["output_format"].set("dataset" if args and args.matlab else "mat")
-        self.schema_label = StringVar(master=root, value="; ".join(self.schema_files))
+        if self.schema_files and not (args and args.excel):
+            if len(self.schema_files) > 2:
+                raise ValueError("Without Excel, --schema accepts INPUT.txt [OUTPUT.txt] only.")
+            self.fields["input_schema"].set(self.schema_files[0])
+            if len(self.schema_files) == 2:
+                self.fields["output_schema"].set(self.schema_files[1])
+            self.schema_files = []
         self.sheet_label = StringVar(
             master=root,
             value=" | ".join(
@@ -70,18 +78,17 @@ class Application:
             ("Excel workbook (optional)", "excel", "excel"),
             ("DBC file / folder (optional)", "dbc_folder", "dbc"),
             ("BLF file / folder", "blf", "blf"),
-            ("TXT schemas (optional)", "schema", "schema"),
+            ("Input TXT schema (optional)", "input_schema", "schema"),
+            ("Output TXT schema (optional)", "output_schema", "schema"),
             ("Output folder (auto)", "output", "directory"),
             ("YAML config (optional)", "config", "config"),
             ("MATLAB (Dataset only)", "matlab", "matlab"),
         )
         for row, (label, key, kind) in enumerate(rows):
             ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=4)
-            variable = self.schema_label if key == "schema" else self.fields[key]
+            variable = self.fields[key]
             entry = ttk.Entry(frame, textvariable=variable, width=65)
             entry.grid(row=row, column=1, sticky="ew", padx=8)
-            if key == "schema":
-                entry.state(["readonly"])
             self.controls.append(entry)
             button = ttk.Button(
                 frame,
@@ -96,12 +103,12 @@ class Application:
                 )
                 folder.grid(row=row, column=3, padx=4)
                 self.controls.append(folder)
-            if key == "schema":
-                clear = ttk.Button(frame, text="Clear", command=self.clear_schema)
+            if kind == "schema":
+                clear = ttk.Button(frame, text="Clear", command=lambda k=key: self.clear_schema(k))
                 clear.grid(row=row, column=3)
                 self.controls.append(clear)
         advanced = ttk.LabelFrame(frame, text="Output and optional Excel mapping", padding=6)
-        advanced.grid(row=7, column=0, columnspan=4, sticky="ew", pady=6)
+        advanced.grid(row=8, column=0, columnspan=4, sticky="ew", pady=6)
         advanced.columnconfigure(1, weight=1)
         ttk.Label(advanced, text="Output format").grid(row=0, column=0, sticky="w")
         output_format = ttk.Combobox(
@@ -142,13 +149,12 @@ class Application:
         ttk.Label(
             frame,
             text=(
-                "TXT without Excel: leave Excel blank; element names match DBC signals "
-                "(all interfaces are inputs).\n"
+                "TXT without Excel: select input/output separately to create two MAT files.\n"
                 "Empty YAML uses signal_mapping.yaml beside the .pyz when present."
             ),
-        ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(4, 8))
+        ).grid(row=9, column=0, columnspan=4, sticky="w", pady=(4, 8))
         actions = ttk.Frame(frame)
-        actions.grid(row=9, column=0, columnspan=4, sticky="ew")
+        actions.grid(row=10, column=0, columnspan=4, sticky="ew")
         for label, command in (
             ("Convert", self.start_conversion),
             ("Check environment", self.start_check),
@@ -159,20 +165,20 @@ class Application:
         self.progress = ttk.Progressbar(actions, mode="indeterminate")
         self.progress.pack(side="right", fill="x", expand=True)
         ttk.Label(frame, textvariable=self.status).grid(
-            row=10, column=0, columnspan=4, sticky="w", pady=6
+            row=11, column=0, columnspan=4, sticky="w", pady=6
         )
         self.output = Text(frame, wrap="word", state="disabled", height=16)
-        self.output.grid(row=11, column=0, columnspan=3, sticky="nsew")
+        self.output.grid(row=12, column=0, columnspan=3, sticky="nsew")
         scrollbar = ttk.Scrollbar(frame, command=self.output.yview)
-        scrollbar.grid(row=11, column=3, sticky="ns")
+        scrollbar.grid(row=12, column=3, sticky="ns")
         self.output.configure(yscrollcommand=scrollbar.set)
-        frame.rowconfigure(11, weight=1)
+        frame.rowconfigure(12, weight=1)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.poll_id = root.after(75, self.poll)
 
-    def clear_schema(self) -> None:
+    def clear_schema(self, key: str) -> None:
         self.schema_files = []
-        self.schema_label.set("")
+        self.fields[key].set("")
 
     def select_sheets(self) -> None:
         try:
@@ -229,13 +235,11 @@ class Application:
         if kind == "directory":
             value = filedialog.askdirectory(parent=self.root, mustexist=key != "output")
         elif kind == "schema":
-            files = filedialog.askopenfilenames(
+            value = filedialog.askopenfilename(
                 parent=self.root, filetypes=[("TXT schema", "*.txt")]
             )
-            if files:
-                self.schema_files = list(files)
-                self.schema_label.set("; ".join(files))
-            return
+            if value:
+                self.schema_files = []
         else:
             filters = {
                 "excel": [("Excel workbook", "*.xlsx *.xlsm")],

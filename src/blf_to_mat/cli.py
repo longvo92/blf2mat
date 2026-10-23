@@ -46,7 +46,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "TXT without Excel (element names match DBC signal names):\n"
-            "  blf-to-mat --blf .\\capture.blf --dbc .\\network.dbc --schema .\\signals.txt\n\n"
+            "  blf-to-mat --blf .\\capture.blf --dbc .\\network.dbc "
+            "--input-schema .\\inputs.txt --output-schema .\\outputs.txt\n\n"
             "PowerShell example:\n"
             "  python .\\blf_to_mat.pyz `\n"
             "    --excel .\\Interface.xlsx `\n"
@@ -89,11 +90,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         metavar="TXT",
         help=(
-            "One or more TXT schema files. Format: Interface.Element : datatype. "
-            "No Excel required: elements map to DBC signals by name; all interfaces are inputs. "
-            "Dimension is fixed to 1."
+            "Legacy TXT selection. Without Excel: first TXT is input, second is output "
+            "(at most two). With Excel: sheets select sides. Prefer --input-schema and "
+            "--output-schema without Excel. Format: Interface.Element : datatype; scalar only."
         ),
     )
+    for side in ("input", "output"):
+        parser.add_argument(
+            f"--{side}-schema",
+            metavar="TXT",
+            help=f"TXT schema for {side} signals; exports <name>_{side}.mat. No Excel required.",
+        )
     parser.add_argument(
         "-o",
         "--output",
@@ -227,6 +234,30 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         else:
             raise argparse.ArgumentTypeError(f"BLF file/folder does not exist: {blf_source}")
         schema_files = [_existing_file(x, "Schema TXT", (".txt",)) for x in args.schema or []]
+        if schema_files and (args.input_schema or args.output_schema):
+            raise argparse.ArgumentTypeError(
+                "Use --input-schema/--output-schema or --schema, not both."
+            )
+        input_schema = (
+            _existing_file(args.input_schema, "Input schema TXT", (".txt",))
+            if args.input_schema
+            else None
+        )
+        output_schema = (
+            _existing_file(args.output_schema, "Output schema TXT", (".txt",))
+            if args.output_schema
+            else None
+        )
+        if not excel and schema_files:
+            if len(schema_files) > 2:
+                raise argparse.ArgumentTypeError(
+                    "Without Excel, --schema accepts INPUT.txt [OUTPUT.txt] only. "
+                    "Use --input-schema and --output-schema to select sides explicitly."
+                )
+            input_schema = schema_files[0]
+            output_schema = schema_files[1] if len(schema_files) == 2 else None
+        if input_schema or output_schema:
+            schema_files = [p for p in (input_schema, output_schema) if p]
 
         if args.config:
             mapping_config = _existing_file(args.config, "Mapping config", (".yaml", ".yml"))
@@ -257,6 +288,8 @@ def resolve_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         dbc_folder=dbc_folder,
         blf_files=blf_files,
         schema_files=schema_files,
+        input_schema=input_schema,
+        output_schema=output_schema,
         output_folder=Path(args.output).expanduser().resolve()
         if args.output
         else (blf_source if blf_source.is_dir() else blf_source.parent) / "mat_output",

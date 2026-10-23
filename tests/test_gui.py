@@ -108,11 +108,13 @@ def test_gui_txt_without_excel(app, sample, monkeypatch):
 
     (sample["root"] / "interfaces.xlsx").unlink()
     sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
-    monkeypatch.setattr(
-        gui.filedialog, "askopenfilenames", lambda **kwargs: (str(sample["schema"]),)
-    )
-    app.browse("schema", "schema")
-    assert app.schema_label.get() == str(sample["schema"])
+    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(sample["schema"]))
+    app.browse("input_schema", "schema")
+    assert app.fields["input_schema"].get() == str(sample["schema"])
+    output_schema = sample["root"] / "output.txt"
+    output_schema.write_text("Vehicle.RequestCAN : uint8\n")
+    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kwargs: str(output_schema))
+    app.browse("output_schema", "schema")
     app.fields["blf"].set(str(sample["blf"]))
     app.fields["dbc_folder"].set(str(sample["root"] / "dbc"))
     assert app.fields["excel"].get() == ""
@@ -123,6 +125,33 @@ def test_gui_txt_without_excel(app, sample, monkeypatch):
         "Scenario"
     ]
     assert scenario["Vehicle"]["SpeedCAN"]["Data"].tolist() == [0, 10, 30]
+    assert set(scenario["Vehicle"]) == {"SpeedCAN"}
+    output = loadmat(sample["root"] / "mat_output/sample_output.mat", simplify_cells=True)[
+        "Scenario"
+    ]
+    assert set(output["Vehicle"]) == {"RequestCAN"}
+    assert output["Vehicle"]["RequestCAN"]["Data"].tolist() == [2, 3]
+    app.clear_schema("output_schema")
+    assert app.fields["output_schema"].get() == ""
+    assert app.fields["input_schema"].get() == str(sample["schema"])
+
+
+@pytest.mark.gui
+def test_gui_legacy_txt_arguments_fill_separate_fields(tk_root, sample):
+    from blf_to_mat.gui import Application
+
+    args = cli.build_arg_parser().parse_args(
+        ["--schema", str(sample["schema"]), str(sample["root"] / "output.txt")]
+    )
+    application = Application(tk_root, args)
+    try:
+        assert application.fields["input_schema"].get() == str(sample["schema"])
+        assert application.fields["output_schema"].get() == str(sample["root"] / "output.txt")
+        assert not application.schema_files
+    finally:
+        tk_root.after_cancel(application.poll_id)
+        for widget in tk_root.winfo_children():
+            widget.destroy()
 
 
 @pytest.mark.gui

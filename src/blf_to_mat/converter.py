@@ -203,6 +203,8 @@ class SelectedPaths:
     mapping_config: Path | None
     matlab_exe: Path | None
     output_format: str = "mat"
+    input_schema: Path | None = None
+    output_schema: Path | None = None
     input_sheets: tuple[str, ...] = ()
     output_sheets: tuple[str, ...] = ()
     element_column: str | None = None
@@ -1533,6 +1535,9 @@ def _convert(paths: SelectedPaths) -> int:
     log(f"  Excel  : {paths.excel}")
     log(f"  DBC    : {paths.dbc_folder}")
     log(f"  Schema : {len(paths.schema_files)} file(s)")
+    if paths.input_schema or paths.output_schema:
+        log(f"  IN TXT : {paths.input_schema or '(none)'}")
+        log(f"  OUT TXT: {paths.output_schema or '(none)'}")
     log(f"  YAML   : {paths.mapping_config if paths.mapping_config else '(none)'}")
     log(f"  Output : {paths.output_folder}")
 
@@ -1554,12 +1559,18 @@ def _convert(paths: SelectedPaths) -> int:
     )
     all_interfaces = setup.interfaces
     input_interfaces = select_input_interfaces(
-        all_interfaces,
-        interfaces_from_names(all_interfaces, setup.input_names),
+        setup.input_interfaces if setup.input_interfaces is not None else all_interfaces,
+        setup.input_interfaces
+        if setup.input_interfaces is not None
+        else interfaces_from_names(all_interfaces, setup.input_names),
         input_mapping_config,
         input_forces,
     )
-    output_interfaces = interfaces_from_names(all_interfaces, setup.output_names)
+    output_interfaces = (
+        setup.output_interfaces
+        if setup.output_interfaces is not None
+        else interfaces_from_names(all_interfaces, setup.output_names)
+    )
     in_elem_map, in_specific_map = setup.input_elements, setup.input_specific
     out_elem_map, out_specific_map = setup.output_elements, setup.output_specific
     if not input_interfaces and not output_interfaces and paths.output_format == "dataset":
