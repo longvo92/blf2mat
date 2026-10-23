@@ -140,7 +140,12 @@ class Application:
             advanced, text="Blank = auto-detect. Columns accept a header name or 1-based number."
         ).grid(row=5, column=0, columnspan=4, sticky="w")
         ttk.Label(
-            frame, text="Empty YAML uses signal_mapping.yaml beside the .pyz when present."
+            frame,
+            text=(
+                "TXT without Excel: leave Excel blank; element names match DBC signals "
+                "(all interfaces are inputs).\n"
+                "Empty YAML uses signal_mapping.yaml beside the .pyz when present."
+            ),
         ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(4, 8))
         actions = ttk.Frame(frame)
         actions.grid(row=9, column=0, columnspan=4, sticky="ew")

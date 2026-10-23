@@ -101,6 +101,31 @@ def test_gui_blf_only(app, sample):
 
 
 @pytest.mark.gui
+def test_gui_txt_without_excel(app, sample, monkeypatch):
+    from scipy.io import loadmat
+
+    from blf_to_mat import gui
+
+    (sample["root"] / "interfaces.xlsx").unlink()
+    sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
+    monkeypatch.setattr(
+        gui.filedialog, "askopenfilenames", lambda **kwargs: (str(sample["schema"]),)
+    )
+    app.browse("schema", "schema")
+    assert app.schema_label.get() == str(sample["schema"])
+    app.fields["blf"].set(str(sample["blf"]))
+    app.fields["dbc_folder"].set(str(sample["root"] / "dbc"))
+    assert app.fields["excel"].get() == ""
+    app.start_conversion()
+    wait_for_job(app)
+    assert app.status.get() == "Completed"
+    scenario = loadmat(sample["root"] / "mat_output/sample_input.mat", simplify_cells=True)[
+        "Scenario"
+    ]
+    assert scenario["Vehicle"]["SpeedCAN"]["Data"].tolist() == [0, 10, 30]
+
+
+@pytest.mark.gui
 @pytest.mark.parametrize("single_file", [False, True])
 def test_gui_dbc_file_and_folder_buttons(app, sample, monkeypatch, single_file):
     from tkinter import ttk

@@ -36,58 +36,70 @@ python -m pip install .
 blf-to-mat --gui
 ```
 
-For a packaged build, place the `.pyz` and accompanying `requirements.txt`
-in the same folder and run:
+For a packaged build, use the accompanying requirements:
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\blf_to_mat-0.1.1.pyz --gui
+python .\blf_to_mat-0.1.2.pyz --gui
 ```
 
-Use the same Python for installation and running the tool. Run `blf-to-mat --check`
-or `python .\blf_to_mat-0.1.1.pyz --check` to diagnose missing dependencies.
+Use the same Python to install and run. Add `--check` to diagnose dependencies.
 
 ## Convert
 
-In the GUI, select a BLF file or folder, add any optional inputs, choose the output
-format and click **Convert**. Use **Select sheets...** to customize Excel mapping;
-blank fields use automatic detection. Conversion runs in the background with logs.
+In the GUI, select BLF, optional inputs and output format, then click **Convert**.
+**Select sheets...** customizes Excel mapping; blank fields use automatic detection.
 
 For the command line:
 
 ```powershell
 blf-to-mat --blf .\capture.blf
 blf-to-mat --blf .\capture.blf --dbc .\network.dbc
-blf-to-mat --blf .\Logs --dbc .\DBC
 ```
 
-With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.1.pyz`.
+With a packaged build, replace `blf-to-mat` with `python .\blf_to_mat-0.1.2.pyz`.
 
-To skip Excel data rows, add keywords to your YAML config and select it with
-`--config .\signal_mapping.yaml` or **YAML config** in the GUI:
+### TXT without Excel
+
+Leave **Excel workbook** blank and select one or more **TXT schemas** in the GUI,
+or run:
+
+```powershell
+blf-to-mat --blf .\capture.blf --dbc .\network.dbc --schema .\signals.txt
+```
+
+Each TXT line declares a scalar signal, for example:
+
+```text
+VehicleInputs.VehicleSpeed : single
+VehicleInputs.Enable : boolean
+```
+
+Element names (`VehicleSpeed`, `Enable`) match DBC signal names automatically.
+All TXT interfaces go to `<name>_input.mat`, regardless of file/interface names.
+Use Excel to select input/output sides, or YAML to map different CAN names.
+Without DBC, TXT signals use defaults. BLF remains required.
+
+To skip Excel rows, select a YAML config containing:
 
 ```yaml
 excel_skip_keywords: ["ignore", "obsolete"]
 ```
 
-A row is skipped if any cell contains any keyword (case-insensitive substring),
-on both input and output sheets. Omit the setting or use `[]` to keep all rows.
+Keywords match substrings in any cell, case-insensitively, on both sides.
 
-Output goes to `mat_output` beside the BLF file or inside the selected BLF folder.
-Use `--output` to choose another folder. BLF-only creates `<name>.mat` with frames;
-BLF with a DBC creates `<name>_signals.mat`. Custom mappings produce input/output files
-for the configured sides. In the GUI, use **File...** or **Folder...** for DBC;
-`--dbc-folder` remains supported in CLI. See `--help` for all options and the
-[YAML example](examples/signal_mapping.example.yaml) for mapping syntax.
+Output defaults to `mat_output` beside BLF; change it with `--output`.
+BLF-only creates `<name>.mat`; BLF + DBC creates `<name>_signals.mat`.
+Mappings produce input/output files for configured sides.
+See `--help` and the [YAML example](examples/signal_mapping.example.yaml).
 
 ## Before using the result
 
-Ordinary MAT files contain data structures, not native Signal Editor Datasets.
-Choose `dataset` in the GUI or pass `--format dataset` for Signal Editor; this
-requires MATLAB/Simulink R2024b+ and an available license.
+For native Signal Editor Datasets, choose `dataset` or pass `--format dataset`;
+MATLAB/Simulink R2024b+ and a license are required.
 
-Without DBC, CAN signals cannot be decoded. Missing mapped samples use defaults
-with warnings, so review the log. **Existing output files are overwritten.** Native
+Missing signals use defaults with warnings; review the log.
+**Existing output files are overwritten.** Native
 Dataset export still needs validation with a live MATLAB/Signal Editor session.
 
 ## License
