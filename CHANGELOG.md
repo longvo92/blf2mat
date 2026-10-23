@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.2] - 2026-10-23
+
+- Clarify the TXT-without-Excel workflow in the GUI, command-line help and usage examples.
+
 ## [0.1.1] - 2026-10-22
 
 - Skip Excel mapping rows containing configured keywords using `excel_skip_keywords` in YAML, in both CLI and GUI.

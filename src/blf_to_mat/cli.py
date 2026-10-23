@@ -45,6 +45,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "TXT and YAML customize decoded signals. MATLAB is needed only for --format dataset."
         ),
         epilog=(
+            "TXT without Excel (element names match DBC signal names):\n"
+            "  blf-to-mat --blf .\\capture.blf --dbc .\\network.dbc --schema .\\signals.txt\n\n"
             "PowerShell example:\n"
             "  python .\\blf_to_mat.pyz `\n"
             "    --excel .\\Interface.xlsx `\n"
@@ -88,6 +90,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="TXT",
         help=(
             "One or more TXT schema files. Format: Interface.Element : datatype. "
+            "No Excel required: elements map to DBC signals by name; all interfaces are inputs. "
             "Dimension is fixed to 1."
         ),
     )

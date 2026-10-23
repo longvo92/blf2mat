@@ -86,6 +86,31 @@ def test_schema_without_excel_maps_element_names(sample):
     assert signal["Data"].tolist() == [0, 10, 30]
 
 
+@pytest.mark.parametrize("with_dbc", [False, True])
+def test_txt_workflow_without_workbook_or_matlab(sample, monkeypatch, with_dbc):
+    (sample["root"] / "interfaces.xlsx").unlink()
+    sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
+    second = sample["root"] / "outputs.txt"
+    second.write_text("ControllerOutputs.RequestCAN : uint8\n", encoding="utf-8")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("TXT workflow must not read Excel or launch MATLAB")
+
+    monkeypatch.setattr(core.pd, "ExcelFile", forbidden)
+    monkeypatch.setattr(core, "run_matlab_batch", forbidden)
+    argv = dbc_args(sample) if with_dbc else basic_args(sample)
+    assert cli.main([*argv, "--schema", str(sample["schema"]), str(second)]) == 0
+    scenario = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    assert set(scenario) == {"Vehicle", "ControllerOutputs"}
+    speed = scenario["Vehicle"]["SpeedCAN"]
+    assert speed["Data"].dtype.name == "float32"
+    assert speed["Data"].tolist() == ([0, 10, 30] if with_dbc else [0, 0])
+    assert scenario["ControllerOutputs"]["RequestCAN"]["Data"].tolist() == (
+        [0, 2, 3] if with_dbc else [0, 0]
+    )
+    assert not (sample["output"] / "sample_output.mat").exists()
+
+
 def test_force_without_excel_schema_or_dbc(sample):
     sample["config"].write_text(
         "input_forces:\n- {interface: Inputs, element: Enable, value: 7}\n", encoding="utf-8"
@@ -337,3 +362,19 @@ def test_blf_only_from_built_archive(tmp_path, sample):
     assert loadmat(sample["output"] / "sample.mat", simplify_cells=True)["Frames"][
         "ID"
     ].tolist() == [999, 256, 256]
+
+
+def test_txt_without_excel_from_built_archive(tmp_path, sample):
+    archive = build(tmp_path / "release")
+    (sample["root"] / "interfaces.xlsx").unlink()
+    sample["schema"].write_text("Vehicle.SpeedCAN : single\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(archive), *dbc_args(sample), "--schema", str(sample["schema"])],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    scenario = loadmat(sample["output"] / "sample_input.mat", simplify_cells=True)["Scenario"]
+    assert scenario["Vehicle"]["SpeedCAN"]["Data"].tolist() == [0, 10, 30]
