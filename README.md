@@ -8,7 +8,7 @@
 [![Python 3.11–3.14](https://img.shields.io/badge/Python-3.11%E2%80%933.14-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22A699.svg)](LICENSE)
 
-[Get started](#install-and-open) · [Usage](#convert) · [Mapping example](examples/signal_mapping.example.yaml) · [Changelog](CHANGELOG.md)
+[Get started](#install-and-open) · [Usage](#convert) · [CLI flags](#cli-flags) · [Mapping example](examples/signal_mapping.example.yaml) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -94,6 +94,55 @@ Output defaults to `mat_output` beside BLF; change it with `--output`.
 BLF-only creates `<name>.mat`; BLF + DBC creates `<name>_signals.mat`.
 Mappings produce input/output files for configured sides.
 See `--help` and the [YAML example](examples/signal_mapping.example.yaml).
+
+## CLI flags
+
+Aliases in the same row are interchangeable. Quote paths and sheet/header names
+containing spaces. Only `--blf` is required for conversion.
+
+| Flag | Value and behavior |
+| --- | --- |
+| `-b`, `--blf` | BLF file or folder; folders are searched recursively. |
+| `-d`, `--dbc`, `--dbc-folder` | Optional DBC file or recursively searched folder. Omit for raw frames or mapping defaults. |
+| `-e`, `--excel` | Optional `.xlsx` or `.xlsm` mapping workbook. |
+| `--input-schema` | Input TXT schema; produces `<name>_input.mat`. |
+| `--output-schema` | Output TXT schema; produces `<name>_output.mat`. |
+| `-s`, `--schema` | Legacy space-separated TXT paths. Without Excel: `INPUT.txt [OUTPUT.txt]` (maximum two). With Excel, sheets select sides. Cannot combine with explicit schema flags. |
+| `-c`, `--config` | YAML mappings, transforms, forced inputs and `excel_skip_keywords`. If omitted, auto-loads `signal_mapping.yaml` beside the `.pyz`, or in the working directory for source runs, when present. |
+| `-o`, `--output` | Output directory; default: `mat_output` beside the BLF file or inside the selected BLF folder. |
+| `--format` | `mat` (default, no MATLAB) or `dataset` (native Signal Editor Dataset). |
+| `--matlab` | MATLAB executable path; implies `dataset` unless `--format` is explicit. Otherwise MATLAB is discovered on PATH or in common Windows installation folders. |
+| `--gui` | Open GUI; also the default with no arguments. |
+| `--cli` | Run conversion in the terminal; also the default when conversion arguments are supplied. |
+| `--check` | Diagnose Python dependencies, Tcl/Tk and MATLAB discovery without launching MATLAB. Add `--format dataset` to require MATLAB discovery. |
+| `--debug` | Print the full Python traceback on failure. |
+| `--version` | Print version and exit. |
+| `-h`, `--help` | Print usage and exit. |
+
+`--gui`, `--cli` and `--check` are mutually exclusive.
+
+Excel options require `--excel`. Columns accept a header name or **1-based**
+column number; omitted columns are detected automatically.
+
+| Flag | Value and behavior |
+| --- | --- |
+| `--input-sheet` | Input sheet name; repeat for multiple sheets. |
+| `--output-sheet` | Output sheet name; repeat for multiple sheets. If either sheet flag is supplied, only explicitly selected sheets are used. Otherwise mapping sheets are detected. |
+| `--element-column` | Element name column. |
+| `--can-column` | CAN signal name column. |
+| `--interface-column` | Interface name column. |
+| `--dtype-column` | Datatype column. |
+| `--header-row` | Header row number, starting at 1; default: detect within the first 20 rows. |
+
+Example with explicit Excel selection:
+
+```powershell
+blf-to-mat --blf .\logs --dbc .\DBC --excel .\Interface.xlsx `
+  --input-sheet "Inputs" --input-sheet "Extra Inputs" --output-sheet "Outputs" `
+  --element-column "Element" --can-column "CAN Signal" `
+  --interface-column "Interface" --dtype-column "Datatype" --header-row 2 `
+  --config .\signal_mapping.yaml --output .\results --format mat
+```
 
 ## Before using the result
 
